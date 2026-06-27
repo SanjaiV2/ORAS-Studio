@@ -1,0 +1,34 @@
+# Xcode
+xcuserdata/
+*.xcworkspace
+DerivedData/
+*.moved-aside
+*.xcbkptlist
+*.xccheckout
+*.xcuserstate
+.swiftpm/
+
+# Swift Package Manager
+.build/
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Nintendo / ROM — NE JAMAIS COMMITTER
+*.3ds
+*.cia
+*.bin
+*.cro
+*.elf
+*.o
+*.lst
+extracted/
+romfs/
+exefs/
+__pycache__/
+
+# Secrets
+*.p12
+*.mobileprovision
+AuthKey_*.p8

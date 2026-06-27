@@ -1,0 +1,32 @@
+{
+  "source": "/Users/sanjai/Documents/ORAS-Remastered/ORAS Studio/Views/DetailView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Choisissez un type de données dans la barre latérale.",
+        "location": {
+          "startingColumn": 39,
+          "startingLine": 17
+        }
+      },
+      {
+        "comment": "",
+        "key": "Sélectionnez une section",
+        "location": {
+          "startingColumn": 21,
+          "startingLine": 15
+        }
+      },
+      {
+        "comment": "",
+        "key": "L'éditeur « %@ » arrivera dans %@.",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 55
+        }
+      }
+    ]
+  },
+  "version": 1
+}

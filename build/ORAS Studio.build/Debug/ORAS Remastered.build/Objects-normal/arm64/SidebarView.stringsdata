@@ -1,0 +1,24 @@
+{
+  "source": "/Users/sanjai/Documents/ORAS-Remastered/ORAS Studio/Views/SidebarView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Aucun projet ouvert",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 68
+        }
+      },
+      {
+        "comment": "",
+        "key": "Ouvrir…",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 71
+        }
+      }
+    ]
+  },
+  "version": 1
+}

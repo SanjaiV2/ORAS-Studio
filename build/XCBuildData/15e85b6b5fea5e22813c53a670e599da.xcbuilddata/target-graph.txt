@@ -1,0 +1,2 @@
+Target dependency graph (1 target)
+Target 'ORAS Remastered' in project 'ORAS Studio' (no dependencies)

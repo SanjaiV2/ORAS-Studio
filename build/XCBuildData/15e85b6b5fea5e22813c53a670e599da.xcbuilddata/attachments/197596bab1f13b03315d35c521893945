@@ -1,0 +1,99 @@
+{
+  "" : {
+    "diagnostics" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ORAS Remastered-primary.dia",
+    "emit-module-dependencies" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ORAS Remastered-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ORAS Remastered-primary-emit-module.dia",
+    "pch" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ORAS Remastered-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ORAS Remastered-primary.swiftdeps"
+  },
+  "/Users/sanjai/Documents/ORAS-Remastered/ORAS Studio/ContentView.swift" : {
+    "const-values" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ContentView.swiftconstvalues",
+    "dependencies" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ContentView.d",
+    "diagnostics" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ContentView.dia",
+    "index-unit-output-path" : "/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ContentView.o",
+    "llvm-bc" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ContentView.bc",
+    "object" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ContentView.o",
+    "swift-dependencies" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ContentView.swiftdeps",
+    "swiftmodule" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ContentView~partial.swiftmodule"
+  },
+  "/Users/sanjai/Documents/ORAS-Remastered/ORAS Studio/Controllers/ProjectController.swift" : {
+    "const-values" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ProjectController.swiftconstvalues",
+    "dependencies" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ProjectController.d",
+    "diagnostics" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ProjectController.dia",
+    "index-unit-output-path" : "/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ProjectController.o",
+    "llvm-bc" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ProjectController.bc",
+    "object" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ProjectController.o",
+    "swift-dependencies" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ProjectController.swiftdeps",
+    "swiftmodule" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ProjectController~partial.swiftmodule"
+  },
+  "/Users/sanjai/Documents/ORAS-Remastered/ORAS Studio/Models/GARCFile.swift" : {
+    "const-values" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/GARCFile.swiftconstvalues",
+    "dependencies" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/GARCFile.d",
+    "diagnostics" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/GARCFile.dia",
+    "index-unit-output-path" : "/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/GARCFile.o",
+    "llvm-bc" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/GARCFile.bc",
+    "object" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/GARCFile.o",
+    "swift-dependencies" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/GARCFile.swiftdeps",
+    "swiftmodule" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/GARCFile~partial.swiftmodule"
+  },
+  "/Users/sanjai/Documents/ORAS-Remastered/ORAS Studio/Models/ORASProject.swift" : {
+    "const-values" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ORASProject.swiftconstvalues",
+    "dependencies" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ORASProject.d",
+    "diagnostics" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ORASProject.dia",
+    "index-unit-output-path" : "/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ORASProject.o",
+    "llvm-bc" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ORASProject.bc",
+    "object" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ORASProject.o",
+    "swift-dependencies" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ORASProject.swiftdeps",
+    "swiftmodule" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ORASProject~partial.swiftmodule"
+  },
+  "/Users/sanjai/Documents/ORAS-Remastered/ORAS Studio/ORASStudioApp.swift" : {
+    "const-values" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ORASStudioApp.swiftconstvalues",
+    "dependencies" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ORASStudioApp.d",
+    "diagnostics" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ORASStudioApp.dia",
+    "index-unit-output-path" : "/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ORASStudioApp.o",
+    "llvm-bc" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ORASStudioApp.bc",
+    "object" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ORASStudioApp.o",
+    "swift-dependencies" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ORASStudioApp.swiftdeps",
+    "swiftmodule" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/ORASStudioApp~partial.swiftmodule"
+  },
+  "/Users/sanjai/Documents/ORAS-Remastered/ORAS Studio/Views/DetailView.swift" : {
+    "const-values" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/DetailView.swiftconstvalues",
+    "dependencies" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/DetailView.d",
+    "diagnostics" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/DetailView.dia",
+    "index-unit-output-path" : "/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/DetailView.o",
+    "llvm-bc" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/DetailView.bc",
+    "object" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/DetailView.o",
+    "swift-dependencies" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/DetailView.swiftdeps",
+    "swiftmodule" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/DetailView~partial.swiftmodule"
+  },
+  "/Users/sanjai/Documents/ORAS-Remastered/ORAS Studio/Views/SidebarView.swift" : {
+    "const-values" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/SidebarView.swiftconstvalues",
+    "dependencies" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/SidebarView.d",
+    "diagnostics" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/SidebarView.dia",
+    "index-unit-output-path" : "/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/SidebarView.o",
+    "llvm-bc" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/SidebarView.bc",
+    "object" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/SidebarView.o",
+    "swift-dependencies" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/SidebarView.swiftdeps",
+    "swiftmodule" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/SidebarView~partial.swiftmodule"
+  },
+  "/Users/sanjai/Documents/ORAS-Remastered/ORAS Studio/Views/WelcomeView.swift" : {
+    "const-values" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/WelcomeView.swiftconstvalues",
+    "dependencies" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/WelcomeView.d",
+    "diagnostics" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/WelcomeView.dia",
+    "index-unit-output-path" : "/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/WelcomeView.o",
+    "llvm-bc" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/WelcomeView.bc",
+    "object" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/WelcomeView.o",
+    "swift-dependencies" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/WelcomeView.swiftdeps",
+    "swiftmodule" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/WelcomeView~partial.swiftmodule"
+  },
+  "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "const-values" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftconstvalues",
+    "dependencies" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/GeneratedAssetSymbols.d",
+    "diagnostics" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/GeneratedAssetSymbols.dia",
+    "index-unit-output-path" : "/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "swift-dependencies" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftdeps",
+    "swiftmodule" : "/Users/sanjai/Documents/ORAS-Remastered/build/ORAS Studio.build/Debug/ORAS Remastered.build/Objects-normal/arm64/GeneratedAssetSymbols~partial.swiftmodule"
+  }
+}

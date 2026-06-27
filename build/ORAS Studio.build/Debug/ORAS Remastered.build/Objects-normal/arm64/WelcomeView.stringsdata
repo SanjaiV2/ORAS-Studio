@@ -1,0 +1,48 @@
+{
+  "source": "/Users/sanjai/Documents/ORAS-Remastered/ORAS Studio/Views/WelcomeView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "ORAS Remastered",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 38
+        }
+      },
+      {
+        "comment": "",
+        "key": "Éditeur de fichiers Pokémon Omega Ruby / Alpha Sapphire",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 41
+        }
+      },
+      {
+        "comment": "",
+        "key": "Aucun projet récent",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 51
+        }
+      },
+      {
+        "comment": "",
+        "key": "Projets récents",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 87
+        }
+      },
+      {
+        "comment": "",
+        "key": "Ouvrir un projet ORAS…",
+        "location": {
+          "startingColumn": 19,
+          "startingLine": 98
+        }
+      }
+    ]
+  },
+  "version": 1
+}
