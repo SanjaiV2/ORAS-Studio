@@ -83,37 +83,33 @@ final class ProjectController: ObservableObject {
         errorMessage = nil
         validationResult = nil
 
-        // 1. Créer un signet persistant pendant qu'on a accès implicite via le picker
-        do {
-            let bookmark = try url.bookmarkData(
-                options: .withSecurityScope,
-                includingResourceValuesForKeys: nil,
-                relativeTo: nil
-            )
+        // Tenter de créer un signet persistant (nécessite une signature App Store valide).
+        // En build local ad-hoc le signet échoue — on continue quand même avec l'URL directe.
+        if let bookmark = try? url.bookmarkData(
+            options: .withSecurityScope,
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        ) {
             UserDefaults.standard.set(bookmark, forKey: bookmarkKey)
-        } catch {
-            errorMessage = "Impossible de créer le signet sécurisé : \(error.localizedDescription)"
-            isLoading = false
-            return
-        }
 
-        // 2. Résoudre immédiatement le signet pour obtenir une URL au cycle de vie maîtrisé
-        do {
-            var stale = false
-            let scopedURL = try URL(
-                resolvingBookmarkData: UserDefaults.standard.data(forKey: bookmarkKey)!,
-                options: .withSecurityScope,
-                relativeTo: nil,
-                bookmarkDataIsStale: &stale
-            )
-            guard scopedURL.startAccessingSecurityScopedResource() else {
-                throw ORASError.loadFailed("Accès sécurisé refusé par macOS.")
+            // Résoudre le signet pour obtenir une URL avec cycle de vie maîtrisé
+            if var stale = Optional(false),
+               let scopedURL = try? URL(
+                   resolvingBookmarkData: bookmark,
+                   options: .withSecurityScope,
+                   relativeTo: nil,
+                   bookmarkDataIsStale: &stale
+               ),
+               scopedURL.startAccessingSecurityScopedResource() {
+                await performLoad(url: scopedURL)
+                isLoading = false
+                return
             }
-            await performLoad(url: scopedURL)
-        } catch {
-            errorMessage = error.localizedDescription
         }
 
+        // Fallback : utiliser l'URL directement (build non sandboxé / ad-hoc)
+        _ = url.startAccessingSecurityScopedResource()
+        await performLoad(url: url)
         isLoading = false
     }
 
