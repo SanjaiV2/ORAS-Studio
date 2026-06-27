@@ -4,7 +4,7 @@
     "Localizable": [
       {
         "comment": "",
-        "key": "Erreur lors du chargement",
+        "key": "Erreur",
         "location": {
           "startingColumn": 13,
           "startingLine": 45
@@ -15,7 +15,7 @@
         "key": "Ouvrir un dossier ORAS extrait (contenant 'romfs')",
         "location": {
           "startingColumn": 23,
-          "startingLine": 22
+          "startingLine": 23
         }
       },
       {
@@ -23,15 +23,7 @@
         "key": "Ouvrir un projet",
         "location": {
           "startingColumn": 27,
-          "startingLine": 20
-        }
-      },
-      {
-        "comment": "",
-        "key": "Chargement du projet…",
-        "location": {
-          "startingColumn": 22,
-          "startingLine": 37
+          "startingLine": 21
         }
       },
       {
@@ -40,6 +32,22 @@
         "location": {
           "startingColumn": 20,
           "startingLine": 51
+        }
+      },
+      {
+        "comment": "",
+        "key": "Chargement du projet…",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 78
+        }
+      },
+      {
+        "comment": "",
+        "key": "Validation et lecture des archives GARC.",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 79
         }
       }
     ]

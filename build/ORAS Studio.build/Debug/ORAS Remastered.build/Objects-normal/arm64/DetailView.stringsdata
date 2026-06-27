@@ -7,7 +7,7 @@
         "key": "Choisissez un type de données dans la barre latérale.",
         "location": {
           "startingColumn": 39,
-          "startingLine": 17
+          "startingLine": 21
         }
       },
       {
@@ -15,7 +15,55 @@
         "key": "Sélectionnez une section",
         "location": {
           "startingColumn": 21,
-          "startingLine": 15
+          "startingLine": 19
+        }
+      },
+      {
+        "comment": "",
+        "key": "Dossier invalide",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 63
+        }
+      },
+      {
+        "comment": "",
+        "key": "Ce dossier ne correspond pas à un jeu ORAS extrait.",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 65
+        }
+      },
+      {
+        "comment": "",
+        "key": "Vérification du contenu",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 82
+        }
+      },
+      {
+        "comment": "",
+        "key": "Sélectionnez le dossier racine de l'extraction (celui qui contient « romfs »).",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 99
+        }
+      },
+      {
+        "comment": "",
+        "key": "Choisir un autre dossier…",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 93
+        }
+      },
+      {
+        "comment": "",
+        "key": "REQUIS",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 129
         }
       },
       {
@@ -23,7 +71,7 @@
         "key": "L'éditeur « %@ » arrivera dans %@.",
         "location": {
           "startingColumn": 18,
-          "startingLine": 55
+          "startingLine": 161
         }
       }
     ]
