@@ -16,6 +16,7 @@
 		AA000100000000000000013 /* GARCFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000100000000000000007 /* GARCFile.swift */; };
 		AA000100000000000000014 /* ProjectController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000100000000000000008 /* ProjectController.swift */; };
 		AA000100000000000000015 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AA000100000000000000009 /* Assets.xcassets */; };
+		AA00010000000000000002B /* ORASValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00010000000000000002A /* ORASValidator.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -31,6 +32,7 @@
 		AA000100000000000000009 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		AA00010000000000000000A /* ORAS_Studio.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ORAS_Studio.entitlements; sourceTree = "<group>"; };
 		AA00010000000000000000B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AA00010000000000000002A /* ORASValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ORASValidator.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -82,6 +84,7 @@
 			children = (
 				AA000100000000000000006 /* ORASProject.swift */,
 				AA000100000000000000007 /* GARCFile.swift */,
+				AA00010000000000000002A /* ORASValidator.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -179,6 +182,7 @@
 				AA000100000000000000011 /* DetailView.swift in Sources */,
 				AA000100000000000000012 /* ORASProject.swift in Sources */,
 				AA000100000000000000013 /* GARCFile.swift in Sources */,
+				AA00010000000000000002B /* ORASValidator.swift in Sources */,
 				AA000100000000000000014 /* ProjectController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

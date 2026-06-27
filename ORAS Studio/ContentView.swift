@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
     @EnvironmentObject var controller: ProjectController
@@ -21,28 +22,27 @@ struct ContentView: View {
                 }
                 .help("Ouvrir un dossier ORAS extrait (contenant 'romfs')")
 
-                if controller.project != nil {
+                if let name = controller.project?.name {
                     Divider()
-                    Text(controller.project?.name ?? "")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    projectStatusChip(name: name)
                 }
             }
         }
-        // Feuille de chargement
-        .sheet(isPresented: $controller.isLoading) {
-            VStack(spacing: 16) {
-                ProgressView()
-                    .scaleEffect(1.2)
-                Text("Chargement du projet…")
-                    .font(.headline)
-            }
-            .padding(40)
-            .frame(width: 280)
+        // MARK: — Sélecteur de dossier sécurisé (sandbox-safe)
+        .fileImporter(
+            isPresented: $controller.showingFilePicker,
+            allowedContentTypes: [.folder],
+            allowsMultipleSelection: false
+        ) { result in
+            controller.handlePickerResult(result)
         }
-        // Alerte d'erreur
+        // MARK: — Feuille de chargement
+        .sheet(isPresented: $controller.isLoading) {
+            LoadingSheet()
+        }
+        // MARK: — Alerte erreur
         .alert(
-            "Erreur lors du chargement",
+            "Erreur",
             isPresented: Binding(
                 get: { controller.errorMessage != nil },
                 set: { if !$0 { controller.errorMessage = nil } }
@@ -52,6 +52,36 @@ struct ContentView: View {
         } message: {
             Text(controller.errorMessage ?? "")
         }
+    }
+
+    // MARK: — Chip d'état projet
+
+    @ViewBuilder
+    private func projectStatusChip(name: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+                .imageScale(.small)
+            Text(name)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+// MARK: — Feuille de chargement
+
+private struct LoadingSheet: View {
+    var body: some View {
+        VStack(spacing: 16) {
+            ProgressView().scaleEffect(1.2)
+            Text("Chargement du projet…").font(.headline)
+            Text("Validation et lecture des archives GARC.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(48)
+        .frame(width: 300)
     }
 }
 

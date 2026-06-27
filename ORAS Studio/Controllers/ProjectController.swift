@@ -1,5 +1,5 @@
 import SwiftUI
-import AppKit
+import UniformTypeIdentifiers
 
 @MainActor
 final class ProjectController: ObservableObject {
@@ -7,50 +7,109 @@ final class ProjectController: ObservableObject {
     // MARK: — État publié
 
     @Published private(set) var project: ORASProject?
+    @Published private(set) var validationResult: ORASValidator.ValidationResult?
     @Published var isLoading = false
     @Published var errorMessage: String?
     @Published private(set) var recentProjects: [URL] = []
+    @Published var showingFilePicker = false
 
-    // MARK: — UserDefaults key
+    // MARK: — Clés UserDefaults (namespaced)
 
-    private let recentProjectsKey = "recentProjects"
-    private let maxRecentProjects = 5
+    private let bookmarkKey = "com.sanjai.ORASRemastered.projectBookmark"
+    private let recentsKey  = "com.sanjai.ORASRemastered.recentPaths"
 
-    // MARK: — Init
+    // URL dont on gère le cycle de vie via startAccessingSecurityScopedResource
+    private var scopedURL: URL?
+
+    // MARK: — Init / deinit
 
     init() {
-        loadRecentProjects()
+        loadRecentPaths()
+        Task { await restoreFromBookmark() }
     }
 
-    // MARK: — Ouvrir via NSOpenPanel (sandbox-safe)
+    deinit {
+        scopedURL?.stopAccessingSecurityScopedResource()
+    }
+
+    // MARK: — Interface publique
 
     func openProject() {
-        let panel = NSOpenPanel()
-        panel.title = "Sélectionner un dossier ORAS extrait"
-        panel.message = "Choisissez le dossier racine contenant le sous-dossier « romfs »."
-        panel.prompt = "Ouvrir"
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.canCreateDirectories = false
+        showingFilePicker = true
+    }
 
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+    /// Rouvre un projet récent via le signet sauvegardé si disponible,
+    /// sinon ouvre le sélecteur de fichier pour re-demander l'accès.
+    func openRecent(_ url: URL) {
+        Task { await tryRestoreOrPick(url) }
+    }
 
-        Task {
-            await loadProject(from: url)
+    /// Rappel du composant .fileImporter de SwiftUI
+    func handlePickerResult(_ result: Result<[URL], Error>) {
+        switch result {
+        case .failure(let err):
+            // L'utilisateur a annulé ou une erreur système s'est produite
+            guard (err as? CocoaError)?.code != .userCancelled else { return }
+            errorMessage = err.localizedDescription
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            Task { await importFromPicker(url) }
         }
     }
 
-    // MARK: — Chargement asynchrone
+    // MARK: — Restauration projet récent
 
-    func loadProject(from url: URL) async {
+    private func tryRestoreOrPick(_ targetURL: URL) async {
+        guard let data = UserDefaults.standard.data(forKey: bookmarkKey) else {
+            openProject(); return
+        }
+        isLoading = true
+        var stale = false
+        if let resolved = try? URL(resolvingBookmarkData: data, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &stale),
+           resolved.resolvingSymlinksInPath().path == targetURL.resolvingSymlinksInPath().path,
+           resolved.startAccessingSecurityScopedResource() {
+            await performLoad(url: resolved)
+            isLoading = false
+            return
+        }
+        isLoading = false
+        openProject()
+    }
+
+    // MARK: — Import depuis le picker
+
+    private func importFromPicker(_ url: URL) async {
         isLoading = true
         errorMessage = nil
+        validationResult = nil
 
+        // 1. Créer un signet persistant pendant qu'on a accès implicite via le picker
         do {
-            let loaded = try await ORASProject.load(from: url)
-            project = loaded
-            addToRecents(url)
+            let bookmark = try url.bookmarkData(
+                options: .withSecurityScope,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+            UserDefaults.standard.set(bookmark, forKey: bookmarkKey)
+        } catch {
+            errorMessage = "Impossible de créer le signet sécurisé : \(error.localizedDescription)"
+            isLoading = false
+            return
+        }
+
+        // 2. Résoudre immédiatement le signet pour obtenir une URL au cycle de vie maîtrisé
+        do {
+            var stale = false
+            let scopedURL = try URL(
+                resolvingBookmarkData: UserDefaults.standard.data(forKey: bookmarkKey)!,
+                options: .withSecurityScope,
+                relativeTo: nil,
+                bookmarkDataIsStale: &stale
+            )
+            guard scopedURL.startAccessingSecurityScopedResource() else {
+                throw ORASError.loadFailed("Accès sécurisé refusé par macOS.")
+            }
+            await performLoad(url: scopedURL)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -58,41 +117,86 @@ final class ProjectController: ObservableObject {
         isLoading = false
     }
 
-    // MARK: — Projets récents
+    // MARK: — Restauration au démarrage depuis UserDefaults
 
-    private func addToRecents(_ url: URL) {
-        var recents = recentProjects.filter { $0 != url }
-        recents.insert(url, at: 0)
-        if recents.count > maxRecentProjects {
-            recents = Array(recents.prefix(maxRecentProjects))
-        }
-        recentProjects = recents
-        saveRecentProjects()
-    }
+    private func restoreFromBookmark() async {
+        guard let data = UserDefaults.standard.data(forKey: bookmarkKey) else { return }
+        isLoading = true
 
-    private func saveRecentProjects() {
-        let bookmarks = recentProjects.compactMap { url -> Data? in
-            try? url.bookmarkData(
-                options: .withSecurityScope,
-                includingResourceValuesForKeys: nil,
-                relativeTo: nil
-            )
-        }
-        UserDefaults.standard.set(bookmarks, forKey: recentProjectsKey)
-    }
-
-    private func loadRecentProjects() {
-        guard let bookmarks = UserDefaults.standard.array(forKey: recentProjectsKey) as? [Data] else { return }
-        recentProjects = bookmarks.compactMap { data -> URL? in
+        do {
             var stale = false
-            guard let url = try? URL(
+            let url = try URL(
                 resolvingBookmarkData: data,
                 options: .withSecurityScope,
                 relativeTo: nil,
                 bookmarkDataIsStale: &stale
-            ) else { return nil }
-            _ = url.startAccessingSecurityScopedResource()
-            return url
+            )
+
+            guard url.startAccessingSecurityScopedResource() else {
+                isLoading = false
+                return
+            }
+
+            // Rafraîchir le signet si périmé
+            if stale {
+                if let fresh = try? url.bookmarkData(
+                    options: .withSecurityScope,
+                    includingResourceValuesForKeys: nil,
+                    relativeTo: nil
+                ) {
+                    UserDefaults.standard.set(fresh, forKey: bookmarkKey)
+                }
+            }
+
+            await performLoad(url: url)
+
+        } catch {
+            // Signet invalide ou révoqué — on efface pour ne pas boucler
+            UserDefaults.standard.removeObject(forKey: bookmarkKey)
         }
+
+        isLoading = false
+    }
+
+    // MARK: — Chargement + validation centralisés
+
+    private func performLoad(url: URL) async {
+        // Libérer l'ancienne ressource scopée
+        scopedURL?.stopAccessingSecurityScopedResource()
+        scopedURL = url
+
+        // Validation structurelle
+        let result = ORASValidator.validate(url)
+        validationResult = result
+
+        guard result.isValid else {
+            project = nil
+            return
+        }
+
+        // Chargement du projet (préchargement des GARCs essentiels)
+        do {
+            let loaded = try await ORASProject.load(from: url)
+            project = loaded
+            addToRecents(url)
+        } catch {
+            errorMessage = error.localizedDescription
+            project = nil
+        }
+    }
+
+    // MARK: — Projets récents (chemins uniquement, pas de bookmarks)
+
+    private func addToRecents(_ url: URL) {
+        var paths = recentProjects.map(\.path).filter { $0 != url.path }
+        paths.insert(url.path, at: 0)
+        let trimmed = Array(paths.prefix(5))
+        recentProjects = trimmed.map { URL(fileURLWithPath: $0) }
+        UserDefaults.standard.set(trimmed, forKey: recentsKey)
+    }
+
+    private func loadRecentPaths() {
+        guard let paths = UserDefaults.standard.stringArray(forKey: recentsKey) else { return }
+        recentProjects = paths.map { URL(fileURLWithPath: $0) }
     }
 }

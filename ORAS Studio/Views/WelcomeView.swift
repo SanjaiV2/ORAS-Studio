@@ -56,7 +56,7 @@ struct WelcomeView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(controller.recentProjects, id: \.self) { url in
                         Button {
-                            Task { await controller.loadProject(from: url) }
+                            controller.openRecent(url)
                         } label: {
                             HStack {
                                 Image(systemName: "folder")
