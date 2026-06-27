@@ -77,10 +77,11 @@ final class ORASProject: ObservableObject {
                 throw ORASError.missingGARC(path)
             }
             let data = try Data(contentsOf: url)
-            guard let garc = GARCFile(data: data) else {
+            do {
+                loadedGARCs[path] = try GARCFile(data: data)
+            } catch {
                 throw ORASError.invalidGARC(path)
             }
-            loadedGARCs[path] = garc
         }
     }
 
@@ -93,10 +94,12 @@ final class ORASProject: ObservableObject {
             throw ORASError.missingGARC(relativePath)
         }
         let data = try Data(contentsOf: url)
-        guard let garc = GARCFile(data: data) else {
+        do {
+            let garc = try GARCFile(data: data)
+            loadedGARCs[relativePath] = garc
+            return garc
+        } catch {
             throw ORASError.invalidGARC(relativePath)
         }
-        loadedGARCs[relativePath] = garc
-        return garc
     }
 }

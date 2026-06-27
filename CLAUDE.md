@@ -33,12 +33,14 @@ ORAS-Remastered/
     ├── ORASStudioApp.swift            ← point d'entrée @main
     ├── ContentView.swift              ← NavigationSplitView + .fileImporter
     ├── Views/
-    │   ├── SidebarView.swift          ← navigation latérale + sections
+    │   ├── SidebarView.swift          ← navigation latérale + sections (incl. Explorateur GARC)
     │   ├── WelcomeView.swift          ← écran accueil (aucun projet ouvert)
-    │   └── DetailView.swift           ← vue détail + ValidationErrorView
+    │   ├── DetailView.swift           ← vue détail + ValidationErrorView
+    │   └── GARCExplorerView.swift     ← explorateur 3 colonnes : archive | entrées | hex ✅
     ├── Models/
     │   ├── ORASProject.swift          ← état du projet ouvert + erreurs
-    │   ├── GARCFile.swift             ← modèle fichier GARC + LZ11
+    │   ├── GARCFile.swift             ← parseur GARC binaire complet ✅
+    │   ├── LZ11Decompressor.swift     ← port exact de Reference/lz11.py ✅
     │   └── ORASValidator.swift        ← validation structure RomFS ORAS ✅
     ├── Controllers/
     │   └── ProjectController.swift    ← Security-Scoped Bookmarks, validation, récents ✅
@@ -68,14 +70,15 @@ ValidationErrorView  ──── restoreFromBookmark() (auto au boot)     GARCE
 
 ### Sections éditables (roadmap)
 
-| Section (`SidebarSection`) | Données cibles | GARC |
-|---------------------------|----------------|------|
-| Zones | Entités, scripts, rencontres par zone | `romfs/a/0/1/3` |
-| Scripts | Scripts de zone (format ZO + bytecode FireFly) | `romfs/a/0/1/3` |
-| Textes | Banques de dialogue et descriptions | `romfs/a/0/7/0` etc. |
-| Rencontres sauvages | Tables de Pokémon par zone/méthode | `romfs/a/0/1/3` |
-| Objets | Propriétés et données des items | `romfs/a/0/2/7` |
-| Dresseurs | Équipes et IA des dresseurs | `romfs/a/0/5/5` |
+| Section (`SidebarSection`) | Données cibles | GARC | Statut |
+|---------------------------|----------------|------|--------|
+| Zones | Entités, scripts, rencontres par zone | `romfs/a/0/1/3` | Milestone 3 |
+| Scripts | Scripts de zone (format ZO + bytecode FireFly) | `romfs/a/0/1/3` | Milestone 3 |
+| Textes | Banques de dialogue et descriptions | `romfs/a/0/7/0` etc. | Milestone 2 |
+| Rencontres sauvages | Tables de Pokémon par zone/méthode | `romfs/a/0/1/3` | Milestone 3 |
+| Objets | Propriétés et données des items | `romfs/a/0/2/7` | Milestone 4 |
+| Dresseurs | Équipes et IA des dresseurs | `romfs/a/0/5/5` | Milestone 4 |
+| **Explorateur GARC** | Navigation binaire de toutes les archives | tous | **✅ Phase 2** |
 
 ---
 
@@ -151,10 +154,33 @@ ValidationErrorView  ──── restoreFromBookmark() (auto au boot)     GARCE
 
 ---
 
-## Milestone 2 — Éditeur de zones
+## Phase 2 — Moteur de décodage binaire ✅ TERMINÉ
 
-- [ ] Implémenter `GARCParser.swift` (lecture complète GARC + FIMB)
-- [ ] Implémenter `LZ11.swift` (décompression depuis `Reference/lz11.py`)
-- [ ] Vue liste des zones (`ZoneListView.swift`)
-- [ ] Modèle `ZoneObject.swift` (sections ZO)
-- [ ] Tests unitaires pour GARC et LZ11
+### Moteur GARC + LZ11 ✅
+- [x] `GARCFile.swift` — parseur binaire complet (DataReader, FATO, FATB, FIMB)
+  - Header : magic `CRAG`, headerSize(u32), version(u16), dataOffset(u32)
+  - FATO : entryCount(u16), offsets[]
+  - FATB : vector(u32) bitmask, sub-entrées = start(u32) + end(u32) + length(u32)
+  - Versions 0x0400 (ORAS/XY) et 0x0600 (SM/USUM) supportées
+- [x] `LZ11Decompressor.swift` — port exact de `Reference/lz11.py`
+  - Indicateur 0 : longueur moyenne (count + 0x11)
+  - Indicateur 1 : grande longueur (count + 0x111)
+  - Indicateur ≥2 : LZSS standard (count + 1)
+  - Copie chevauchante fidèle (invariant LZ Nintendo)
+
+### Explorateur GARC ✅
+- [x] `GARCExplorerView.swift` — 3 colonnes HStack
+  - Colonne 1 (210 pt) : liste des 6 GARCs connus avec icônes colorées
+  - Colonne 2 (240–340 pt) : entrées avec badges LZ11/multi-sub + taille
+  - Colonne 3 (≥320 pt) : métadonnées + décompression on-demand + hex dump 16-colonnes
+- [x] `SidebarSection.explorer` — icône `archivebox.fill`, couleur `.mint`
+- [x] `DetailView.swift` — dispatch `.explorer → GARCExplorerView()`
+
+---
+
+## Milestone 3 — Éditeur de zones
+
+- [ ] `ZoneObject.swift` — modèle ZO (5 sections : ZoneData, ZoneEntities, MapScript, WildEncounters, Unknown)
+- [ ] `ZoneListView.swift` — liste des zones avec recherche
+- [ ] `ZoneEntityEditorView.swift` — éditeur NPC/Warp/Trigger
+- [ ] Tests unitaires pour GARCFile et LZ11Decompressor

@@ -35,6 +35,7 @@ struct DetailView: View {
         case .encounters: PlaceholderView(section: section, milestone: "Milestone 3")
         case .items:      PlaceholderView(section: section, milestone: "Milestone 4")
         case .trainers:   PlaceholderView(section: section, milestone: "Milestone 4")
+        case .explorer:   GARCExplorerView()
         }
     }
 }

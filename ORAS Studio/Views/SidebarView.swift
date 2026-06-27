@@ -9,6 +9,7 @@ enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
     case encounters  = "Rencontres sauvages"
     case items       = "Objets"
     case trainers    = "Dresseurs"
+    case explorer    = "Explorateur GARC"
 
     var id: String { rawValue }
 
@@ -20,6 +21,7 @@ enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .encounters: "leaf.fill"
         case .items:      "bag.fill"
         case .trainers:   "person.2.fill"
+        case .explorer:   "archivebox.fill"
         }
     }
 
@@ -31,6 +33,7 @@ enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .encounters: .orange
         case .items:      .yellow
         case .trainers:   .red
+        case .explorer:   .mint
         }
     }
 }
