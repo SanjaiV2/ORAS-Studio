@@ -52,6 +52,7 @@ struct SidebarView: View {
                 Image(systemName: section.icon)
                     .foregroundStyle(section.color)
             }
+            .tag(section)
         }
         .listStyle(.sidebar)
         .navigationTitle(controller.project?.name ?? "ORAS Remastered")

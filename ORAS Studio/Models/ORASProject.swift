@@ -74,13 +74,12 @@ final class ORASProject: ObservableObject {
         for path in essential {
             let url = romfsURL.appending(path: path)
             guard FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) else {
-                throw ORASError.missingGARC(path)
+                // Non-fatal en dev : GARC sera chargé à la demande
+                continue
             }
-            let data = try Data(contentsOf: url)
-            do {
-                loadedGARCs[path] = try GARCFile(data: data)
-            } catch {
-                throw ORASError.invalidGARC(path)
+            if let data = try? Data(contentsOf: url),
+               let garc = try? GARCFile(data: data) {
+                loadedGARCs[path] = garc
             }
         }
     }
