@@ -178,9 +178,33 @@ ValidationErrorView  ──── restoreFromBookmark() (auto au boot)     GARCE
 
 ---
 
+## Phase 3 — Éditeur de dialogues ✅ TERMINÉ
+
+### Décodeur / encodeur PPTXT ✅
+- [x] `BCTTextDecoder.swift` — `PPTXTDecoder` + `PPTXTLine` + `PPTXTBank`
+  - Chiffrement XOR rotatif 3 bits (port de `Reference/pptxt.py`)
+  - Balises : `\n` saut de ligne, `\r` retour boîte, `\c` effacement, `[VAR XXXX]`, `[WAIT n]`
+  - `displayText` : balises → symboles visuels (↵, {JOUEUR}, {RIVAL}, ⏳…)
+- [x] `BCTTextEncoder.swift` — `PPTXTEncoder` + `GARCFile.serialize()`
+  - Réencode textes édités → PPTXT binaire chiffré
+  - Sérialiseur GARC complet (header v0400, FATO, FATB, FIMB, alignement 4 octets)
+  - `GARCFile.updateSubFile()` + `ORASProject.writeGARC()` pour l'écriture disque
+
+### Éditeur de dialogues ✅
+- [x] `DialogueEditorView.swift` — éditeur 2 colonnes
+  - Colonne gauche (180 pt) : liste des banques avec badge de modification (•)
+  - Zone principale : `Table` macOS avec colonnes # | Texte original | Nouvelle histoire
+  - Champs `TextField` inline avec surbrillance orange pour les lignes modifiées
+  - Barre d'outils : sélecteur d'archive, recherche fulltext, filtre "modifiés uniquement"
+  - Bouton "Sauvegarder" → PPTXTEncoder → GARCFile.serialize() → écriture disque
+- [x] `DetailView.swift` — dispatch `.text → DialogueEditorView()`
+- [x] `GARCFile` — `entries`, `subFiles`, `rawData` rendus `var` pour mutation
+
+---
+
 ## Milestone 3 — Éditeur de zones
 
 - [ ] `ZoneObject.swift` — modèle ZO (5 sections : ZoneData, ZoneEntities, MapScript, WildEncounters, Unknown)
 - [ ] `ZoneListView.swift` — liste des zones avec recherche
 - [ ] `ZoneEntityEditorView.swift` — éditeur NPC/Warp/Trigger
-- [ ] Tests unitaires pour GARCFile et LZ11Decompressor
+- [ ] Tests unitaires pour GARCFile, LZ11Decompressor, PPTXTDecoder

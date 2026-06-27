@@ -63,8 +63,8 @@ struct GARCFile {
     // MARK: — Données du fichier
 
     let version: Version
-    let fileCount: Int             // total de sous-fichiers (champ FATB)
-    let entries: [GARCEntry]       // entrées indexées
+    var fileCount: Int             // total de sous-fichiers (champ FATB)
+    var entries: [GARCEntry]       // entrées indexées
 
     // MARK: — Init / parsing
 
@@ -164,7 +164,7 @@ struct GARCFile {
 
 struct GARCEntry: Identifiable {
     let id: Int
-    let subFiles: [GARCSubFile]
+    var subFiles: [GARCSubFile]
 
     /// Alias de compatibilité
     var subEntries: [GARCSubFile] { subFiles }
@@ -175,7 +175,7 @@ struct GARCEntry: Identifiable {
 struct GARCSubFile: Identifiable {
     let id = UUID()
     let bitIndex: Int
-    let rawData: Data
+    var rawData: Data
 
     var size: Int { rawData.count }
     /// Alias de compatibilité

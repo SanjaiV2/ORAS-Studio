@@ -85,6 +85,15 @@ final class ORASProject: ObservableObject {
         }
     }
 
+    // MARK: — Écriture GARC (resérialise et écrit sur disque)
+
+    func writeGARC(_ garc: GARCFile, at relativePath: String) throws {
+        let url = romfsURL.appending(path: relativePath)
+        let binary = garc.serialize()
+        try binary.write(to: url, options: .atomic)
+        loadedGARCs[relativePath] = garc
+    }
+
     // MARK: — Accès GARC paresseux
 
     func garc(at relativePath: String) async throws -> GARCFile {

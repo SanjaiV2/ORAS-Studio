@@ -29,9 +29,9 @@ struct DetailView: View {
     @ViewBuilder
     private func sectionContent(for section: SidebarSection) -> some View {
         switch section {
-        case .zones:      PlaceholderView(section: section, milestone: "Milestone 2")
+        case .zones:      PlaceholderView(section: section, milestone: "Milestone 3")
         case .scripts:    PlaceholderView(section: section, milestone: "Milestone 3")
-        case .text:       PlaceholderView(section: section, milestone: "Milestone 2")
+        case .text:       DialogueEditorView()
         case .encounters: PlaceholderView(section: section, milestone: "Milestone 3")
         case .items:      PlaceholderView(section: section, milestone: "Milestone 4")
         case .trainers:   PlaceholderView(section: section, milestone: "Milestone 4")

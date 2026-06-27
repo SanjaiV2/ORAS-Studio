@@ -19,6 +19,9 @@
 		AA00010000000000000002B /* ORASValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00010000000000000002A /* ORASValidator.swift */; };
 		AA00010000000000000002D /* GARCExplorerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00010000000000000002C /* GARCExplorerView.swift */; };
 		AA00010000000000000002F /* LZ11Decompressor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00010000000000000002E /* LZ11Decompressor.swift */; };
+		AA000100000000000000031 /* BCTTextDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000100000000000000030 /* BCTTextDecoder.swift */; };
+		AA000100000000000000033 /* BCTTextEncoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000100000000000000032 /* BCTTextEncoder.swift */; };
+		AA000100000000000000035 /* DialogueEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000100000000000000034 /* DialogueEditorView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -37,6 +40,9 @@
 		AA00010000000000000002A /* ORASValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ORASValidator.swift; sourceTree = "<group>"; };
 		AA00010000000000000002C /* GARCExplorerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GARCExplorerView.swift; sourceTree = "<group>"; };
 		AA00010000000000000002E /* LZ11Decompressor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LZ11Decompressor.swift; sourceTree = "<group>"; };
+		AA000100000000000000030 /* BCTTextDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BCTTextDecoder.swift; sourceTree = "<group>"; };
+		AA000100000000000000032 /* BCTTextEncoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BCTTextEncoder.swift; sourceTree = "<group>"; };
+		AA000100000000000000034 /* DialogueEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DialogueEditorView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -80,6 +86,7 @@
 				AA000100000000000000004 /* WelcomeView.swift */,
 				AA000100000000000000005 /* DetailView.swift */,
 				AA00010000000000000002C /* GARCExplorerView.swift */,
+				AA000100000000000000034 /* DialogueEditorView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -91,6 +98,8 @@
 				AA000100000000000000007 /* GARCFile.swift */,
 				AA00010000000000000002A /* ORASValidator.swift */,
 				AA00010000000000000002E /* LZ11Decompressor.swift */,
+				AA000100000000000000030 /* BCTTextDecoder.swift */,
+				AA000100000000000000032 /* BCTTextEncoder.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -192,6 +201,9 @@
 				AA000100000000000000014 /* ProjectController.swift in Sources */,
 				AA00010000000000000002D /* GARCExplorerView.swift in Sources */,
 				AA00010000000000000002F /* LZ11Decompressor.swift in Sources */,
+				AA000100000000000000031 /* BCTTextDecoder.swift in Sources */,
+				AA000100000000000000033 /* BCTTextEncoder.swift in Sources */,
+				AA000100000000000000035 /* DialogueEditorView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
