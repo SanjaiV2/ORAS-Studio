@@ -1,25 +1,21 @@
 import SwiftUI
 import SceneKit
 
-struct ZoneSceneKitView: NSViewRepresentable {
+struct ZoneSceneKitView: View {
     let collisionMap: CollisionMap
     let bcmdlVertices: [SCNVector3]    // vide = utiliser collision seulement
     let entityMarkers: [ZoneEntityMarker]
     let background: ZoneBackground
 
-    func makeNSView(context: Context) -> SCNView {
-        let scnView = SCNView()
-        scnView.scene = buildScene()
-        scnView.backgroundColor = .clear
-        scnView.allowsCameraControl = true   // pan/zoom avec souris
-        scnView.showsStatistics = false
-        scnView.autoenablesDefaultLighting = true
-        scnView.antialiasingMode = .multisampling4X
-        return scnView
-    }
-
-    func updateNSView(_ scnView: SCNView, context: Context) {
-        scnView.scene = buildScene()
+    var body: some View {
+        SceneView(
+            scene: buildScene(),
+            options: [
+                .allowsCameraControl,
+                .autoenablesDefaultLighting,
+                .temporalAntialiasingEnabled
+            ]
+        )
     }
 
     private func buildScene() -> SCNScene {
