@@ -105,19 +105,34 @@ struct BCMDLHelper {
         return geo
     }
 
-    // Crée la géométrie de collision 3D haute-fidélité
-    // Murs = boîtes hautes, eau = plan sunken, herbes = tuiles légères
-    static func makeCollisionGeometry(from map: CollisionMap) -> SCNNode {
+    // Crée la géométrie de collision 3D haute-fidélité avec textures procédurales
+    static func makeCollisionGeometry(from map: CollisionMap,
+                                       background: ZoneBackground = .none) -> SCNNode {
         let root = SCNNode()
         let ts: Float = 1.0  // tile size
 
-        // Sol de base — une grande tuile plate pour les zones passables
+        // Sol de base texturé selon le type de zone
         let floorGeo = SCNPlane(width: CGFloat(ts * Float(map.width)),
                                 height: CGFloat(ts * Float(map.height)))
         let floorMat = SCNMaterial()
-        floorMat.diffuse.contents = NSColor(red: 0.52, green: 0.48, blue: 0.42, alpha: 1.0)
-        floorMat.specular.contents = NSColor.white
-        floorMat.shininess = 0.1
+        switch background {
+        case .outdoor:
+            floorMat.diffuse.contents = ProceduralTextureKit.grassTexture(size: 64)
+        case .indoor:
+            floorMat.diffuse.contents = ProceduralTextureKit.floorTileTexture(indoor: true)
+        case .cave:
+            floorMat.diffuse.contents = ProceduralTextureKit.stoneWallTexture(size: 64)
+        case .water:
+            floorMat.diffuse.contents = ProceduralTextureKit.waterTexture(size: 64)
+        default:
+            floorMat.diffuse.contents = ProceduralTextureKit.floorTileTexture(indoor: false)
+        }
+        floorMat.diffuse.wrapS = .repeat
+        floorMat.diffuse.wrapT = .repeat
+        floorMat.diffuse.contentsTransform = SCNMatrix4MakeScale(
+            CGFloat(map.width) / 4, CGFloat(map.height) / 4, 1)
+        floorMat.specular.contents = NSColor(white: 0.1, alpha: 1)
+        floorMat.shininess = 0.05
         floorGeo.materials = [floorMat]
         let floorNode = SCNNode(geometry: floorGeo)
         floorNode.eulerAngles.x = -.pi / 2
@@ -131,53 +146,75 @@ struct BCMDLHelper {
                 let tile = map[x, y]
                 guard tile != .passable else { continue }
 
-                struct TileSpec { var h: Float; var y0: Float; var c: NSColor; var emR: Float = 0 }
+                struct TileSpec {
+                    var h: Float; var y0: Float
+                    var texture: NSImage?
+                    var color: NSColor
+                    var emR: Float = 0
+                    var shininess: CGFloat = 0.1
+                    var isTransparent: Bool = false
+                }
                 let spec: TileSpec
                 switch tile {
                 case .blocked:
-                    // Mur solide avec brique
                     spec = TileSpec(h: 2.8, y0: 1.4,
-                                    c: NSColor(red: 0.55, green: 0.48, blue: 0.42, alpha: 1.0))
+                                    texture: ProceduralTextureKit.stoneWallTexture(),
+                                    color: NSColor(red: 0.55, green: 0.48, blue: 0.42, alpha: 1))
                 case .tallGrass:
-                    spec = TileSpec(h: 0.35, y0: 0.175,
-                                    c: NSColor(red: 0.28, green: 0.68, blue: 0.22, alpha: 1.0))
+                    spec = TileSpec(h: 0.40, y0: 0.20,
+                                    texture: ProceduralTextureKit.grassTexture(),
+                                    color: NSColor(red: 0.22, green: 0.62, blue: 0.16, alpha: 1))
                 case .water:
-                    spec = TileSpec(h: 0.08, y0: -0.02,
-                                    c: NSColor(red: 0.18, green: 0.42, blue: 0.88, alpha: 0.75))
+                    spec = TileSpec(h: 0.10, y0: -0.03,
+                                    texture: ProceduralTextureKit.waterTexture(),
+                                    color: NSColor(red: 0.15, green: 0.40, blue: 0.90, alpha: 0.80),
+                                    shininess: 0.8, isTransparent: true)
                 case .surfable:
-                    spec = TileSpec(h: 0.08, y0: -0.02,
-                                    c: NSColor(red: 0.12, green: 0.55, blue: 0.95, alpha: 0.75))
+                    spec = TileSpec(h: 0.10, y0: -0.03,
+                                    texture: ProceduralTextureKit.waterTexture(),
+                                    color: NSColor(red: 0.10, green: 0.55, blue: 0.95, alpha: 0.80),
+                                    emR: 0.05, shininess: 0.9, isTransparent: true)
                 case .waterfall:
-                    spec = TileSpec(h: 2.0, y0: 1.0,
-                                    c: NSColor(red: 0.35, green: 0.58, blue: 0.98, alpha: 0.8),
-                                    emR: 0.25)
+                    spec = TileSpec(h: 2.2, y0: 1.1,
+                                    texture: ProceduralTextureKit.waterTexture(),
+                                    color: NSColor(red: 0.30, green: 0.58, blue: 0.98, alpha: 0.85),
+                                    emR: 0.20, shininess: 0.7, isTransparent: true)
                 case .hole:
-                    spec = TileSpec(h: 0.05, y0: -0.1,
-                                    c: NSColor(red: 0.06, green: 0.06, blue: 0.08, alpha: 1.0))
+                    spec = TileSpec(h: 0.06, y0: -0.12,
+                                    texture: nil,
+                                    color: NSColor(red: 0.05, green: 0.05, blue: 0.07, alpha: 1))
                 case .ice:
                     spec = TileSpec(h: 0.12, y0: 0.06,
-                                    c: NSColor(red: 0.70, green: 0.92, blue: 0.96, alpha: 0.80),
-                                    emR: 0.15)
+                                    texture: ProceduralTextureKit.iceTexture(),
+                                    color: NSColor(red: 0.72, green: 0.93, blue: 0.97, alpha: 0.85),
+                                    emR: 0.10, shininess: 0.95, isTransparent: true)
                 case .sand:
-                    spec = TileSpec(h: 0.18, y0: 0.09,
-                                    c: NSColor(red: 0.92, green: 0.82, blue: 0.48, alpha: 1.0))
+                    spec = TileSpec(h: 0.20, y0: 0.10,
+                                    texture: ProceduralTextureKit.sandTexture(),
+                                    color: NSColor(red: 0.92, green: 0.82, blue: 0.50, alpha: 1))
                 default:
-                    spec = TileSpec(h: 0.10, y0: 0.05, c: .gray)
+                    spec = TileSpec(h: 0.10, y0: 0.05, texture: nil, color: .gray)
                 }
 
-                let gap: CGFloat = tile == .blocked ? 0.02 : 0.06
+                let gap: CGFloat = tile == .blocked ? 0.02 : 0.05
                 let box = SCNBox(width:  CGFloat(ts) - gap,
                                  height: CGFloat(spec.h),
                                  length: CGFloat(ts) - gap,
-                                 chamferRadius: tile == .blocked ? 0.04 : 0.06)
+                                 chamferRadius: tile == .blocked ? 0.05 : 0.08)
                 let mat = SCNMaterial()
-                mat.diffuse.contents = spec.c
+                if let tex = spec.texture {
+                    mat.diffuse.contents = tex
+                    mat.diffuse.wrapS = .repeat; mat.diffuse.wrapT = .repeat
+                } else {
+                    mat.diffuse.contents = spec.color
+                }
                 if spec.emR > 0 {
-                    mat.emission.contents = spec.c.withAlphaComponent(CGFloat(spec.emR))
+                    mat.emission.contents = spec.color.withAlphaComponent(CGFloat(spec.emR))
                 }
                 mat.specular.contents = NSColor.white
-                mat.shininess = tile == .ice ? 0.8 : (tile == .water || tile == .surfable ? 0.6 : 0.1)
-                mat.isDoubleSided = false
+                mat.shininess = spec.shininess
+                mat.isDoubleSided = tile == .waterfall
+                if spec.isTransparent { mat.transparency = tile == .hole ? 1.0 : 0.85 }
                 box.materials = [mat]
 
                 let node = SCNNode(geometry: box)
