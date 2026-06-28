@@ -41,7 +41,7 @@ final class ORASProject: ObservableObject {
         static let textBanks      = "a/0/2/7"  // Dialogues / textes
         static let wildEncounters = "a/0/3/7"  // Rencontres sauvages
         static let trainerData    = "a/0/5/5"  // Données dresseurs
-        static let itemData       = "a/0/1/9"  // Données objets
+        static let itemData       = "a/1/9/7"  // Données objets (776 entrées × 36 bytes)
     }
 
     // MARK: — Init

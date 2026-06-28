@@ -33,7 +33,7 @@ struct DetailView: View {
         case .scripts:    ScriptEditorView()
         case .text:       DialogueEditorView()
         case .encounters: PlaceholderView(section: section, milestone: "Milestone 3")
-        case .items:      PlaceholderView(section: section, milestone: "Milestone 4")
+        case .items:      ItemEditorView()
         case .trainers:   TrainerEditorView()
         case .explorer:   GARCExplorerView()
         }

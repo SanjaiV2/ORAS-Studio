@@ -29,6 +29,8 @@
 		AA00010000000000000003F /* BCAMDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00010000000000000003E /* BCAMDecoder.swift */; };
 		AA000100000000000000041 /* CollisionEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000100000000000000040 /* CollisionEditor.swift */; };
 		AA000100000000000000043 /* ZoneEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000100000000000000042 /* ZoneEditorView.swift */; };
+		AA000100000000000000045 /* ItemData.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000100000000000000044 /* ItemData.swift */; };
+		AA000100000000000000047 /* ItemEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000100000000000000046 /* ItemEditorView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -57,6 +59,8 @@
 		AA00010000000000000003E /* BCAMDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BCAMDecoder.swift; sourceTree = "<group>"; };
 		AA000100000000000000040 /* CollisionEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollisionEditor.swift; sourceTree = "<group>"; };
 		AA000100000000000000042 /* ZoneEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoneEditorView.swift; sourceTree = "<group>"; };
+		AA000100000000000000044 /* ItemData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemData.swift; sourceTree = "<group>"; };
+		AA000100000000000000046 /* ItemEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemEditorView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -104,6 +108,7 @@
 				AA00010000000000000003A /* ScriptEditorView.swift */,
 				AA00010000000000000003C /* TrainerEditorView.swift */,
 				AA000100000000000000042 /* ZoneEditorView.swift */,
+				AA000100000000000000046 /* ItemEditorView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -121,6 +126,7 @@
 				AA000100000000000000038 /* EventManager.swift */,
 				AA00010000000000000003E /* BCAMDecoder.swift */,
 				AA000100000000000000040 /* CollisionEditor.swift */,
+				AA000100000000000000044 /* ItemData.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -232,6 +238,8 @@
 				AA00010000000000000003F /* BCAMDecoder.swift in Sources */,
 				AA000100000000000000041 /* CollisionEditor.swift in Sources */,
 				AA000100000000000000043 /* ZoneEditorView.swift in Sources */,
+				AA000100000000000000045 /* ItemData.swift in Sources */,
+				AA000100000000000000047 /* ItemEditorView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
