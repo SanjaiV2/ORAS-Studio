@@ -46,23 +46,19 @@ final class ORASProject: ObservableObject {
 
     // MARK: — Init
 
-    init(rootURL: URL, name: String) {
+    init(rootURL: URL, name: String, romfsURL: URL) {
         self.rootURL = rootURL
         self.name = name
-        self.romfsURL = rootURL.appending(path: "romfs", directoryHint: .isDirectory)
+        self.romfsURL = romfsURL
     }
 
     // MARK: — Chargement
 
     static func load(from url: URL) async throws -> ORASProject {
-        let romfsURL = url.appending(path: "romfs", directoryHint: .isDirectory)
-        var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: romfsURL.path(percentEncoded: false), isDirectory: &isDir),
-              isDir.boolValue else {
+        guard let romfsURL = ORASValidator.detectRomfsURL(url) else {
             throw ORASError.notORASRomFS
         }
-
-        let project = ORASProject(rootURL: url, name: url.lastPathComponent)
+        let project = ORASProject(rootURL: url, name: url.lastPathComponent, romfsURL: romfsURL)
         try await project.preloadEssentialGARCs()
         return project
     }

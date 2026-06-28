@@ -30,11 +30,11 @@ struct DetailView: View {
     private func sectionContent(for section: SidebarSection) -> some View {
         switch section {
         case .zones:      PlaceholderView(section: section, milestone: "Milestone 3")
-        case .scripts:    PlaceholderView(section: section, milestone: "Milestone 3")
+        case .scripts:    ScriptEditorView()
         case .text:       DialogueEditorView()
         case .encounters: PlaceholderView(section: section, milestone: "Milestone 3")
         case .items:      PlaceholderView(section: section, milestone: "Milestone 4")
-        case .trainers:   PlaceholderView(section: section, milestone: "Milestone 4")
+        case .trainers:   TrainerEditorView()
         case .explorer:   GARCExplorerView()
         }
     }
@@ -97,7 +97,7 @@ struct ValidationErrorView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
 
-                    Text("Sélectionnez le dossier racine de l'extraction (celui qui contient « romfs »).")
+                    Text("Sélectionnez le dossier contenant « romfs » (extraction ninfs) ou le dossier titleID de Citra (ex. 000400000011C500).")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                         .multilineTextAlignment(.center)

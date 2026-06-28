@@ -22,6 +22,10 @@
 		AA000100000000000000031 /* BCTTextDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000100000000000000030 /* BCTTextDecoder.swift */; };
 		AA000100000000000000033 /* BCTTextEncoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000100000000000000032 /* BCTTextEncoder.swift */; };
 		AA000100000000000000035 /* DialogueEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000100000000000000034 /* DialogueEditorView.swift */; };
+		AA000100000000000000037 /* ScriptInterpreter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000100000000000000036 /* ScriptInterpreter.swift */; };
+		AA000100000000000000039 /* EventManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000100000000000000038 /* EventManager.swift */; };
+		AA00010000000000000003B /* ScriptEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00010000000000000003A /* ScriptEditorView.swift */; };
+		AA00010000000000000003D /* TrainerEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00010000000000000003C /* TrainerEditorView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -43,6 +47,10 @@
 		AA000100000000000000030 /* BCTTextDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BCTTextDecoder.swift; sourceTree = "<group>"; };
 		AA000100000000000000032 /* BCTTextEncoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BCTTextEncoder.swift; sourceTree = "<group>"; };
 		AA000100000000000000034 /* DialogueEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DialogueEditorView.swift; sourceTree = "<group>"; };
+		AA000100000000000000036 /* ScriptInterpreter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptInterpreter.swift; sourceTree = "<group>"; };
+		AA000100000000000000038 /* EventManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EventManager.swift; sourceTree = "<group>"; };
+		AA00010000000000000003A /* ScriptEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptEditorView.swift; sourceTree = "<group>"; };
+		AA00010000000000000003C /* TrainerEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrainerEditorView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -87,6 +95,8 @@
 				AA000100000000000000005 /* DetailView.swift */,
 				AA00010000000000000002C /* GARCExplorerView.swift */,
 				AA000100000000000000034 /* DialogueEditorView.swift */,
+				AA00010000000000000003A /* ScriptEditorView.swift */,
+				AA00010000000000000003C /* TrainerEditorView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -100,6 +110,8 @@
 				AA00010000000000000002E /* LZ11Decompressor.swift */,
 				AA000100000000000000030 /* BCTTextDecoder.swift */,
 				AA000100000000000000032 /* BCTTextEncoder.swift */,
+				AA000100000000000000036 /* ScriptInterpreter.swift */,
+				AA000100000000000000038 /* EventManager.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -204,6 +216,10 @@
 				AA000100000000000000031 /* BCTTextDecoder.swift in Sources */,
 				AA000100000000000000033 /* BCTTextEncoder.swift in Sources */,
 				AA000100000000000000035 /* DialogueEditorView.swift in Sources */,
+				AA000100000000000000037 /* ScriptInterpreter.swift in Sources */,
+				AA000100000000000000039 /* EventManager.swift in Sources */,
+				AA00010000000000000003B /* ScriptEditorView.swift in Sources */,
+				AA00010000000000000003D /* TrainerEditorView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

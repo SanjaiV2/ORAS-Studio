@@ -6,7 +6,7 @@ struct DialogueEditorView: View {
     @EnvironmentObject var controller: ProjectController
 
     // ── Navigation ──────────────────────────────────────────────
-    @State private var garcPath     = "a/0/7/0"
+    @State private var garcPath     = "a/0/8/2"
     @State private var selectedBankID: Int?
     @State private var selectedLineID: Int?
 
@@ -29,12 +29,14 @@ struct DialogueEditorView: View {
         case failure(String)
     }
 
-    // ── GARCs de texte connus ────────────────────────────────────
+    // ── GARCs de texte
+    // OR  : a/0/8/ → /0=JPN /1=ENG /2=FRE /3=ITA /4=GER /5=ESP /6=KOR
+    // AS  : a/0/7/ → /1=JPN /2=JPN /3=ENG /4=FRE /5=ITA /6=GER /7=ESP /8=KOR
     private let textGARCs: [(label: String, path: String)] = [
-        ("Dialogues principaux",  "a/0/7/0"),
-        ("Noms des attaques",      "a/0/2/7"),
-        ("Descriptions attaques",  "a/0/2/8"),
-        ("Noms des Pokémon",       "a/0/7/1"),
+        ("Textes FR — OR (a/0/8/2)",  "a/0/8/2"),
+        ("Textes EN — OR (a/0/8/1)",  "a/0/8/1"),
+        ("Textes FR — AS (a/0/7/4)",  "a/0/7/4"),
+        ("Textes EN — AS (a/0/7/3)",  "a/0/7/3"),
     ]
 
     // MARK: — Layout

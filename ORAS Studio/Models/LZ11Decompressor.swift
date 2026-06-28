@@ -34,6 +34,26 @@ enum LZ11Decompressor {
         return (try? decompress(data)) ?? data
     }
 
+    // MARK: — Compression LZ11 (mode littéral uniquement — sortie valide, non optimisée)
+    // Encapsule les données brutes dans le format LZ11 avec flag 0x00 (tous littéraux).
+    // La sortie est légèrement plus grande mais parfaitement décompressable par le jeu.
+    static func compress(_ data: Data) -> Data {
+        var out = Data()
+        let size = data.count
+        out.append(0x11)
+        out.append(UInt8( size        & 0xFF))
+        out.append(UInt8((size >>  8) & 0xFF))
+        out.append(UInt8((size >> 16) & 0xFF))
+        var i = 0
+        while i < size {
+            let blockSize = min(8, size - i)
+            out.append(0x00)  // tous les bits = 0 → 8 littéraux
+            for j in 0..<blockSize { out.append(data[i + j]) }
+            i += blockSize
+        }
+        return out
+    }
+
     // MARK: — Décompression LZ11
 
     static func decompress(_ data: Data) throws -> Data {

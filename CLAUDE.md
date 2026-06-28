@@ -202,6 +202,42 @@ ValidationErrorView  ──── restoreFromBookmark() (auto au boot)     GARCE
 
 ---
 
+## Phase 4 — Éditeur de scripts et logique événementielle ✅ TERMINÉ
+
+### Interpréteur FireFly ✅
+- [x] `ScriptInterpreter.swift` — parseur complet du format FireFly (section 2 des fichiers ZO)
+  - `ZoneScript` : structure complète (ptrOffset, ptrCount, instrStart, moveStart, subScripts)
+  - `Instruction` : opcode (10 bits bas) + arg (22 bits hauts, signé), flags isReturn/isShowMessage/isJump
+  - `FireFlyOpcode.table` : 30+ opcodes connus (Begin, Return, CallFunc, ShowMessage, SetFlag, JMP…)
+  - `vliDecompress()` : port exact de pk3DS QuickDecompress (bytecode 7-bit VLI)
+  - `parseZone()` : lit le header ZO → section 2 → décompresse pool → construit sub-scripts triés
+
+### Gestionnaire d'événements post-game ✅
+- [x] `EventManager.swift` — `@MainActor ObservableObject` singleton
+  - `StoryFlag` : flags connus ORAS (0x0800–0x090F : histoire, Delta Episode, arènes, post-game Seko)
+  - `PostGameCondition` : conditions à flags requis/interdits avec `isMet(activeFlags:)`
+  - `sekoConditions` : 5 conditions ordonnées de la suite post-game (scène Seko → boss Dialga → fin)
+  - Simulation de flags : `toggleFlag()`, `simulatePostGameStart()`, `resetSimulation()`
+
+### Éditeur de scripts (vue) ✅
+- [x] `ScriptEditorView.swift` — éditeur 3 colonnes `HSplitView`
+  - Colonne 1 (max 200 pt) : liste des zones ZO avec compteur de scripts
+  - Colonne 2 (max 260 pt) : sub-scripts avec offset hex + badge « Dialogue » si ShowMessage
+  - Colonne 3 (flexible) : `Table` des instructions avec opcode coloré (rouge=Return, vert=ShowMessage, orange=JMP)
+  - Chargement : `a/0/1/3` → LZ11Decompressor → ScriptInterpreter.parseZone()
+- [x] `DetailView.swift` — dispatch `.scripts → ScriptEditorView()`
+
+### Éditeur de dresseurs (vue) ✅
+- [x] `TrainerEditorView.swift` — éditeur 2 colonnes `HSplitView`
+  - `TrainerData` : modèle 16-byte (aiFlags u16, moneyFactor u8, battleType u8, items[4] u16, partyCount u16)
+  - Colonne gauche : liste filtrée par ID avec badge double/simple et compteur de Pokémon
+  - Détail : `GroupBox` Combat (type battle, facteur argent) + IA (`AIFlagsEditor` grille de checkboxes)
+  - Items de combat : 4 `TextField` avec `NumberFormatter`
+  - Sauvegarde : reconstruit le binaire 16-byte et écrit dans `a/0/3/8`
+- [x] `DetailView.swift` — dispatch `.trainers → TrainerEditorView()`
+
+---
+
 ## Milestone 3 — Éditeur de zones
 
 - [ ] `ZoneObject.swift` — modèle ZO (5 sections : ZoneData, ZoneEntities, MapScript, WildEncounters, Unknown)
