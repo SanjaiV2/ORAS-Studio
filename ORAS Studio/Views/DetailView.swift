@@ -29,13 +29,16 @@ struct DetailView: View {
     @ViewBuilder
     private func sectionContent(for section: SidebarSection) -> some View {
         switch section {
-        case .zones:      ZoneEditorView()
-        case .scripts:    ScriptEditorView()
-        case .text:       DialogueEditorView()
-        case .encounters: PlaceholderView(section: section, milestone: "Milestone 3")
-        case .items:      ItemEditorView()
-        case .trainers:   TrainerEditorView()
-        case .explorer:   GARCExplorerView()
+        case .zones:         ZoneEditorView()
+        case .scripts:       ScriptEditorView()
+        case .text:          DialogueEditorView()
+        case .encounters:    PlaceholderView(section: section, milestone: "Milestone 3")
+        case .items:         ItemEditorView()
+        case .trainers:      TrainerEditorView()
+        case .explorer:      GARCExplorerView()
+        case .entityEditor:  EntityEditorView()
+        case .scriptBuilder: ScriptBuilderView()
+        case .flagEditor:    FlagEditorView()
         }
     }
 }
