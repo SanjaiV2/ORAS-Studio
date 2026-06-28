@@ -238,7 +238,43 @@ ValidationErrorView  ──── restoreFromBookmark() (auto au boot)     GARCE
 
 ---
 
-## Milestone 3 — Éditeur de zones
+---
+
+## Phase 5 — Éditeur d'environnement et de cinématiques ✅ TERMINÉ
+
+### Décodeur / Encodeur BCAM ✅
+- [x] `BCAMDecoder.swift` — `BCamFile` + `Keyframe` + parse/encode complet
+  - Magic `0x4D414342` ("BCAM"), version u16, frameCount u16, loopStart u32
+  - Per keyframe (40 bytes) : frame(u32) + posX/Y/Z(f32) + pitch/yaw/roll(f32) + fov(f32) + near/far(f32)
+  - `interpolated(atFrame:)` : interpolation linéaire entre keyframes (lerpAngle pour yaw)
+  - `encode() -> Data` : ré-encodage binaire byte-perfect + `newFile()` par défaut
+
+### Éditeur de collisions ✅
+- [x] `CollisionEditor.swift` — `TileType` enum + `CollisionMap` struct + `CollisionGridCanvas`
+  - `TileType` : 9 types (Passable/Bloqué/Herbes/Eau/Surf/Cascade/Trou/Glace/Sable) avec couleurs SwiftUI
+  - Format binaire : magic `COLL` + width(u16) + height(u16) + tiles[w×h × 1 byte]
+  - `paint(x:y:radius:type:)` : pinceau carré (rayon 0/1/2)
+  - `resize(newWidth:newHeight:)` : redimensionnement avec préservation du contenu
+  - `CollisionGridCanvas` : Canvas SwiftUI haute performance + DragGesture pour peindre
+
+### Éditeur de zones (vue) ✅
+- [x] `ZoneEditorView.swift` — éditeur 2 onglets (Caméra / Collision)
+  - **Onglet Caméra** :
+    - Panneau gauche : liste des keyframes avec drag-to-reorder + add/delete
+    - Panneau droit : Stepper de frame + sliders Position (X/Y/Z) + Rotation (Pitch/Yaw/Roll) + FOV/Near/Far
+    - Aperçu 2D Canvas : vue de dessus (plan XZ, yaw) + vue de côté (plan YZ, pitch)
+    - Import/Export .bcam + sauvegarde dans `romfs/cameras/`
+  - **Onglet Collision** :
+    - Palette de 9 types de tuiles + sélecteur de taille de pinceau (1×1 / 3×3 / 5×5)
+    - Grille scrollable avec zoom (12–40 px/tuile)
+    - Panneau légende + Stepper redimensionnement L/H
+    - Import/Export .coll + sauvegarde dans `romfs/collision/`
+- [x] `DetailView.swift` — dispatch `.zones → ZoneEditorView()`
+- [x] `LZ11Decompressor.swift` — `compress()` ajouté (LZ11 littéral → valide pour le jeu)
+
+---
+
+## Milestone 3 — Éditeur de zones (entités)
 
 - [ ] `ZoneObject.swift` — modèle ZO (5 sections : ZoneData, ZoneEntities, MapScript, WildEncounters, Unknown)
 - [ ] `ZoneListView.swift` — liste des zones avec recherche
