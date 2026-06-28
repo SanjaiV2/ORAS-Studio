@@ -23,54 +23,53 @@ struct ZoneSceneKitView: View {
 
     private func buildScene() -> SCNScene {
         let scene = SCNScene()
-        scene.background.contents = NSColor.black
 
         let mapW = CGFloat(collisionMap.width)
         let mapH = CGFloat(collisionMap.height)
-        let center = SCNVector3(mapW / 2, 0, mapH / 2)
+        let cx   = mapW / 2
+        let cz   = mapH / 2
 
         // ── Sky dome ──
         if let sky = ProceduralTextureKit.skyDomeGeometry(background: background) {
-            sky.position = SCNVector3(mapW / 2, -200, mapH / 2)
+            sky.position = SCNVector3(cx, -200, cz)
             scene.rootNode.addChildNode(sky)
         }
 
-        // ── Fog ──
+        // ── Fog atmosphérique (outdoor / water) ──
         if background == .outdoor || background == .water {
             scene.fogColor = background == .water
-                ? NSColor(red: 0.15, green: 0.40, blue: 0.75, alpha: 1)
-                : NSColor(red: 0.75, green: 0.88, blue: 0.98, alpha: 1)
-            scene.fogStartDistance = max(mapW, mapH) * 0.9
-            scene.fogEndDistance   = max(mapW, mapH) * 2.5
+                ? NSColor(red: 0.15, green: 0.42, blue: 0.76, alpha: 1)
+                : NSColor(red: 0.78, green: 0.90, blue: 0.98, alpha: 1)
+            scene.fogStartDistance = max(mapW, mapH) * 0.95
+            scene.fogEndDistance   = max(mapW, mapH) * 2.8
         }
 
-        // ── Étape 1 + 2 : Terrain voxel (relief automatique par grille) ──
-        let terrainNode = BCMDLHelper.makeCollisionGeometry(from: collisionMap, background: background)
-        scene.rootNode.addChildNode(terrainNode)
+        // ── Terrain : sol texturé + relief 3D (arbres, murs, eau) ──
+        let terrain = BCMDLHelper.makeCollisionGeometry(from: collisionMap, background: background)
+        scene.rootNode.addChildNode(terrain)
 
-        // ── Étape 3 : Entités 3D volumétriques (zéro point jaune) ──
-        let entitiesNode = SCNNode()
+        // ── Entités 3D volumétriques ──
         for marker in entityMarkers {
-            entitiesNode.addChildNode(makeEntityNode(marker: marker))
+            if let node = makeEntityNode(marker: marker) {
+                scene.rootNode.addChildNode(node)
+            }
         }
-        scene.rootNode.addChildNode(entitiesNode)
 
-        // ── Overlay BCH (données TM brutes, si disponibles) ──
+        // ── Overlay BCH optionnel (données TM brutes) ──
         if !bcmdlVertices.isEmpty {
             addBCMDLOverlay(to: scene, mapW: mapW, mapH: mapH)
         }
 
         // ── Caméra perspective 3/4 isométrique ──
         let cam = SCNCamera()
-        cam.fieldOfView = 48
+        cam.fieldOfView = 50
         cam.zNear = 0.3
         cam.zFar  = 1500
         cam.wantsDepthOfField = false
-        let camNode = SCNNode()
-        camNode.camera = cam
-        let dist = max(mapW, mapH) * 1.2
-        camNode.position = SCNVector3(mapW / 2, dist * 0.70, mapH / 2 + dist * 0.65)
-        camNode.look(at: center)
+        let camNode = SCNNode(); camNode.camera = cam
+        let dist    = max(mapW, mapH) * 1.15
+        camNode.position = SCNVector3(cx, dist * 0.80, cz + dist * 0.58)
+        camNode.look(at: SCNVector3(cx, 0, cz))
         scene.rootNode.addChildNode(camNode)
 
         // ── Éclairage 3-points ──
@@ -82,159 +81,109 @@ struct ZoneSceneKitView: View {
     // MARK: — Éclairage
 
     private func addLighting(to scene: SCNScene) {
+        // Ambiant
         let amb = SCNLight(); amb.type = .ambient
-        amb.intensity = 350
-        amb.color = NSColor(red: 0.65, green: 0.68, blue: 0.75, alpha: 1)
+        amb.intensity = 420
+        amb.color = NSColor(red: 0.65, green: 0.70, blue: 0.78, alpha: 1)
         let ambNode = SCNNode(); ambNode.light = amb
         scene.rootNode.addChildNode(ambNode)
 
+        // Soleil directionnel principal
         let sun = SCNLight(); sun.type = .directional
-        sun.color = NSColor(red: 1.0, green: 0.96, blue: 0.88, alpha: 1)
-        sun.intensity = background == .cave ? 200 : 900
-        sun.castsShadow = (background != .cave)
-        sun.shadowRadius = 4
-        sun.shadowColor = NSColor(white: 0, alpha: 0.40)
+        sun.color = NSColor(red: 1.0, green: 0.97, blue: 0.90, alpha: 1)
+        sun.intensity = background == .cave ? 250 : 980
+        sun.castsShadow = background != .cave
+        sun.shadowRadius = 3
+        sun.shadowColor  = NSColor(white: 0, alpha: 0.35)
         sun.shadowSampleCount = 8
         let sunNode = SCNNode(); sunNode.light = sun
-        sunNode.eulerAngles = SCNVector3(-CGFloat.pi / 3.2, CGFloat.pi / 5, 0)
+        sunNode.eulerAngles = SCNVector3(-CGFloat.pi / 3.5, CGFloat.pi / 5, 0)
         scene.rootNode.addChildNode(sunNode)
 
+        // Fill sky
         let fill = SCNLight(); fill.type = .directional
-        fill.color = NSColor(red: 0.55, green: 0.72, blue: 0.98, alpha: 1)
-        fill.intensity = background == .cave ? 150 : 280
+        fill.color     = NSColor(red: 0.55, green: 0.73, blue: 0.98, alpha: 1)
+        fill.intensity = background == .cave ? 160 : 310
         let fillNode = SCNNode(); fillNode.light = fill
         fillNode.eulerAngles = SCNVector3(CGFloat.pi / 5, -CGFloat.pi / 3, 0)
         scene.rootNode.addChildNode(fillNode)
     }
 
-    // MARK: — Entités 3D typées (Étape 3 — zéro point jaune)
+    // MARK: — Entités 3D typées
 
-    private func makeEntityNode(marker: ZoneEntityMarker) -> SCNNode {
-        let root = SCNNode()
+    private func makeEntityNode(marker: ZoneEntityMarker) -> SCNNode? {
         let tx = Float(marker.x) + 0.5
         let tz = Float(marker.y) + 0.5
 
         switch marker.kind {
 
-        // ── Arbre (flora) ou bâtiment selon zone ──
+        // Furniture : arbre (outdoor) ou objet générique (indoor/cave)
         case .furniture:
-            if isTree(objID: marker.objID) {
-                root.addChildNode(makeTree(x: tx, z: tz))
+            if background == .outdoor || background == .water {
+                // Même rendu que les arbres des tuiles bloquées
+                return BCMDLHelper.makeTreeNode(x: tx, z: tz)
             } else {
-                root.addChildNode(makeBuilding(x: tx, z: tz))
+                return makeGenericFurniture(x: tx, z: tz)
             }
 
-        // ── PNJ : silhouette corps + tête ──
+        // PNJ : silhouette corps + tête
         case .npc:
-            // Corps
-            let bodyGeo = SCNBox(width: 0.45, height: 0.80, length: 0.25, chamferRadius: 0.06)
-            let bodyMat = SCNMaterial()
-            bodyMat.diffuse.contents = NSColor(red: 0.97, green: 0.61, blue: 0.12, alpha: 1)
-            bodyGeo.materials = [bodyMat]
-            let bodyNode = SCNNode(geometry: bodyGeo)
-            bodyNode.position = SCNVector3(tx, 0.5, tz)
-            // Tête
-            let headGeo = SCNSphere(radius: 0.22)
-            let headMat = SCNMaterial()
-            headMat.diffuse.contents = NSColor(red: 0.96, green: 0.80, blue: 0.65, alpha: 1)
-            headGeo.materials = [headMat]
-            let headNode = SCNNode(geometry: headGeo)
-            headNode.position = SCNVector3(tx, 1.10, tz)
-            root.addChildNode(bodyNode); root.addChildNode(headNode)
+            let root = SCNNode()
+            let body = SCNCylinder(radius: 0.20, height: 0.70)
+            let bMat = SCNMaterial()
+            bMat.diffuse.contents = NSColor(red: 0.97, green: 0.60, blue: 0.10, alpha: 1)
+            body.materials = [bMat]
+            let bNode = SCNNode(geometry: body); bNode.position = SCNVector3(tx, 0.45, tz)
+            let head = SCNSphere(radius: 0.21)
+            let hMat = SCNMaterial()
+            hMat.diffuse.contents = NSColor(red: 0.97, green: 0.80, blue: 0.64, alpha: 1)
+            head.materials = [hMat]
+            let hNode = SCNNode(geometry: head); hNode.position = SCNVector3(tx, 1.02, tz)
+            root.addChildNode(bNode); root.addChildNode(hNode)
+            return root
 
-        // ── Warp : tore bleu + pilier lumineux ──
+        // Warp : disque bleu lumineux au sol
         case .warp:
-            let ring = SCNTorus(ringRadius: 0.42, pipeRadius: 0.08)
-            let ringMat = SCNMaterial()
-            ringMat.diffuse.contents = NSColor(red: 0.20, green: 0.55, blue: 1.0, alpha: 0.9)
-            ringMat.emission.contents = NSColor(red: 0.05, green: 0.25, blue: 0.60, alpha: 1)
-            ringMat.shininess = 0.95; ringMat.isDoubleSided = true
-            ring.materials = [ringMat]
-            let ringNode = SCNNode(geometry: ring)
-            ringNode.eulerAngles = SCNVector3(-Float.pi/6, 0, 0)
-            ringNode.position = SCNVector3(tx, 0.55, tz)
-            // Pilier
-            let beam = SCNCylinder(radius: 0.04, height: 1.5)
-            let beamMat = SCNMaterial()
-            beamMat.diffuse.contents  = NSColor(red: 0.35, green: 0.70, blue: 1.0, alpha: 0.6)
-            beamMat.emission.contents = NSColor(red: 0.35, green: 0.70, blue: 1.0, alpha: 0.6)
-            beamMat.isDoubleSided = true
-            beam.materials = [beamMat]
-            let beamNode = SCNNode(geometry: beam)
-            beamNode.position = SCNVector3(tx, 0.75, tz)
-            root.addChildNode(ringNode); root.addChildNode(beamNode)
+            let root = SCNNode()
+            let disc = SCNCylinder(radius: 0.42, height: 0.04)
+            let dMat = SCNMaterial()
+            dMat.diffuse.contents  = NSColor(red: 0.20, green: 0.55, blue: 1.0, alpha: 0.85)
+            dMat.emission.contents = NSColor(red: 0.05, green: 0.22, blue: 0.55, alpha: 1)
+            dMat.shininess = 0.9; dMat.isDoubleSided = true
+            disc.materials = [dMat]
+            let dNode = SCNNode(geometry: disc); dNode.position = SCNVector3(tx, 0.03, tz)
+            root.addChildNode(dNode)
+            return root
 
-        // ── Trigger : marqueur jaune plat au sol ──
+        // Trigger : marqueur jaune plat au sol
         case .trigger:
-            let geo = SCNBox(width: 0.80, height: 0.04, length: 0.80, chamferRadius: 0)
+            let geo = SCNPlane(width: 0.80, height: 0.80)
             let mat = SCNMaterial()
-            mat.diffuse.contents = NSColor(red: 1.0, green: 0.90, blue: 0.10, alpha: 0.75)
-            mat.emission.contents = NSColor(red: 0.40, green: 0.35, blue: 0.00, alpha: 1)
+            mat.diffuse.contents  = NSColor(red: 1.0, green: 0.90, blue: 0.10, alpha: 0.80)
+            mat.emission.contents = NSColor(red: 0.38, green: 0.32, blue: 0.00, alpha: 1)
+            mat.isDoubleSided = true
             geo.materials = [mat]
             let node = SCNNode(geometry: geo)
-            node.position = SCNVector3(tx, 0.04, tz)
-            node.eulerAngles = SCNVector3(0, Float.pi/4, 0)
-            root.addChildNode(node)
+            node.eulerAngles.x = -.pi / 2
+            node.position = SCNVector3(tx, 0.05, tz)
+            return node
         }
-
-        return root
     }
 
-    // MARK: — Volumes entités
-
-    // Arbre ORAS : tronc cylindrique marron + feuillage sphère verte
-    private func makeTree(x: Float, z: Float) -> SCNNode {
-        let tree = SCNNode()
-        // Tronc
-        let trunk = SCNCylinder(radius: 0.12, height: 1.2)
-        let trunkMat = SCNMaterial()
-        trunkMat.diffuse.contents = NSColor(red: 0.38, green: 0.24, blue: 0.12, alpha: 1)
-        trunk.materials = [trunkMat]
-        let trunkNode = SCNNode(geometry: trunk)
-        trunkNode.position = SCNVector3(x, 0.6, z)   // centré à mi-hauteur
-        // Feuillage
-        let foliage = SCNSphere(radius: 0.55)
-        let foliageMat = SCNMaterial()
-        foliageMat.diffuse.contents = NSColor(red: 0.18, green: 0.58, blue: 0.15, alpha: 1)
-        foliageMat.specular.contents = NSColor(white: 0.1, alpha: 1)
-        foliage.materials = [foliageMat]
-        let foliageNode = SCNNode(geometry: foliage)
-        foliageNode.position = SCNVector3(x, 1.75, z) // au-dessus du tronc
-        tree.addChildNode(trunkNode); tree.addChildNode(foliageNode)
-        return tree
-    }
-
-    // Bâtiment / infrastructure : bloc gris avec fenêtres
-    private func makeBuilding(x: Float, z: Float) -> SCNNode {
-        let building = SCNNode()
-        // Corps principal
-        let geo = SCNBox(width: 0.80, height: 1.4, length: 0.80, chamferRadius: 0.06)
+    // Objet générique (meubles, comptoirs, lit…)
+    private func makeGenericFurniture(x: Float, z: Float) -> SCNNode {
+        let box = SCNBox(width: 0.65, height: 0.65, length: 0.65, chamferRadius: 0.08)
         let mat = SCNMaterial()
-        mat.diffuse.contents = NSColor(red: 0.85, green: 0.85, blue: 0.87, alpha: 1)
+        mat.diffuse.contents = NSColor(red: 0.78, green: 0.68, blue: 0.52, alpha: 1)
         mat.specular.contents = NSColor(white: 0.2, alpha: 1)
         mat.shininess = 0.3
-        geo.materials = [mat]
-        let body = SCNNode(geometry: geo)
-        body.position = SCNVector3(x, 0.7, z)
-        // Toit
-        let roof = SCNPyramid(width: 0.90, height: 0.40, length: 0.90)
-        let roofMat = SCNMaterial()
-        roofMat.diffuse.contents = NSColor(red: 0.70, green: 0.22, blue: 0.20, alpha: 1)
-        roof.materials = [roofMat]
-        let roofNode = SCNNode(geometry: roof)
-        roofNode.position = SCNVector3(x, 1.6, z)
-        building.addChildNode(body); building.addChildNode(roofNode)
-        return building
+        box.materials = [mat]
+        let node = SCNNode(geometry: box)
+        node.position = SCNVector3(x, 0.42, z)
+        return node
     }
 
-    // Heuristique : objID < 100 → flore/arbre ; sinon → infrastructure
-    private func isTree(objID: UInt16) -> Bool {
-        if background == .outdoor { return objID < 100 }
-        if background == .cave    { return false }
-        return objID < 50
-    }
-
-    // MARK: — Overlay BCH point cloud
+    // MARK: — Overlay BCH
 
     private func addBCMDLOverlay(to scene: SCNScene, mapW: CGFloat, mapH: CGFloat) {
         let count = CGFloat(bcmdlVertices.count)
@@ -253,7 +202,8 @@ struct ZoneSceneKitView: View {
                        (v.y - cy) * 0.25 + 2.8,
                        (v.z - cz) * scale + mapH / 2)
         }
-        if let geo = BCMDLHelper.makePointCloud(vertices: adjusted,
+        if let geo = BCMDLHelper.makePointCloud(
+            vertices: adjusted,
             color: NSColor(red: 1.0, green: 0.88, blue: 0.25, alpha: 0.85)) {
             scene.rootNode.addChildNode(SCNNode(geometry: geo))
         }
