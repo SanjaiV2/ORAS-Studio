@@ -3,7 +3,7 @@ import SceneKit
 
 struct ZoneSceneKitView: View {
     let collisionMap: CollisionMap
-    let bcmdlVertices: [SCNVector3]    // vide = utiliser collision seulement
+    let bcmdlVertices: [SCNVector3]
     let entityMarkers: [ZoneEntityMarker]
     let background: ZoneBackground
 
@@ -21,135 +21,143 @@ struct ZoneSceneKitView: View {
     private func buildScene() -> SCNScene {
         let scene = SCNScene()
 
-        // Fond selon le type de zone
-        let bgColor: NSColor
+        // Gradient de fond selon le type de zone
         switch background {
         case .outdoor:
-            bgColor = NSColor(red: 0.6, green: 0.8, blue: 0.5, alpha: 1.0)
+            scene.background.contents = NSColor(red: 0.47, green: 0.72, blue: 0.95, alpha: 1.0)
         case .indoor:
-            bgColor = NSColor(red: 0.8, green: 0.7, blue: 0.6, alpha: 1.0)
+            scene.background.contents = NSColor(red: 0.22, green: 0.20, blue: 0.18, alpha: 1.0)
         case .cave:
-            bgColor = NSColor(red: 0.15, green: 0.12, blue: 0.10, alpha: 1.0)
+            scene.background.contents = NSColor(red: 0.08, green: 0.07, blue: 0.06, alpha: 1.0)
+        case .water:
+            scene.background.contents = NSColor(red: 0.10, green: 0.30, blue: 0.65, alpha: 1.0)
         default:
-            bgColor = NSColor(red: 0.15, green: 0.15, blue: 0.2, alpha: 1.0)
+            scene.background.contents = NSColor(red: 0.12, green: 0.12, blue: 0.16, alpha: 1.0)
         }
-        scene.background.contents = bgColor
 
         let mapW = CGFloat(collisionMap.width)
         let mapH = CGFloat(collisionMap.height)
 
-        // Plan de sol
-        let floor = SCNFloor()
-        floor.reflectivity = 0.0
-        let floorMat = SCNMaterial()
-        let floorColor: NSColor = background == .outdoor
-            ? NSColor(red: 0.55, green: 0.75, blue: 0.45, alpha: 1.0)
-            : NSColor(red: 0.7, green: 0.65, blue: 0.55, alpha: 1.0)
-        floorMat.diffuse.contents = floorColor
-        floor.materials = [floorMat]
-        let floorNode = SCNNode(geometry: floor)
-        scene.rootNode.addChildNode(floorNode)
-
-        // Géométrie de collision (murs, eau, herbes en 3D)
+        // Géométrie de collision 3D haute-fidélité
         let collNode = BCMDLHelper.makeCollisionGeometry(from: collisionMap)
         scene.rootNode.addChildNode(collNode)
 
-        // Vertices BCMDL en overlay semi-transparent (si disponibles)
+        // Vertices BCH/TM en overlay (nuage de points si disponibles)
         if !bcmdlVertices.isEmpty {
             addBCMDLPointCloud(to: scene, mapW: mapW, mapH: mapH)
         }
 
-        // Entités (NPCs, warps, furniture)
+        // Entités : sphères avec émission colorée et tige verticale
         for marker in entityMarkers {
-            let sphere = SCNSphere(radius: 0.4)
-            let mat = SCNMaterial()
             let markerColor: NSColor
             switch marker.kind {
             case .npc:       markerColor = .systemOrange
-            case .furniture: markerColor = .systemBrown
+            case .furniture: markerColor = NSColor(red: 0.6, green: 0.38, blue: 0.12, alpha: 1)
             case .warp:      markerColor = .systemBlue
             case .trigger:   markerColor = .systemYellow
             }
+
+            // Tige (cylindre fin)
+            let cyl = SCNCylinder(radius: 0.05, height: 1.2)
+            let cylMat = SCNMaterial()
+            cylMat.diffuse.contents = markerColor.withAlphaComponent(0.6)
+            cyl.materials = [cylMat]
+            let cylNode = SCNNode(geometry: cyl)
+            cylNode.position = SCNVector3(CGFloat(marker.x) + 0.5, 0.6, CGFloat(marker.y) + 0.5)
+            scene.rootNode.addChildNode(cylNode)
+
+            // Sphère au sommet
+            let sphere = SCNSphere(radius: 0.35)
+            let mat = SCNMaterial()
             mat.diffuse.contents = markerColor
-            mat.emission.contents = markerColor
+            mat.emission.contents = markerColor.withAlphaComponent(0.5)
             sphere.materials = [mat]
             let node = SCNNode(geometry: sphere)
-            node.position = SCNVector3(CGFloat(marker.x), 1.2, CGFloat(marker.y))
+            node.position = SCNVector3(CGFloat(marker.x) + 0.5, 1.4, CGFloat(marker.y) + 0.5)
             scene.rootNode.addChildNode(node)
         }
 
-        // Caméra isométrique (légèrement inclinée pour la 3D)
+        // Caméra perspective 3/4 vue isométrique (angle jeu Pokémon)
         let cameraNode = SCNNode()
         cameraNode.camera = SCNCamera()
-        cameraNode.camera?.usesOrthographicProjection = true
-        cameraNode.camera?.orthographicScale = Double(max(mapW, mapH)) * 0.6
-        cameraNode.camera?.zFar = 500
-        let camDist = max(mapW, mapH)
+        cameraNode.camera?.fieldOfView = 50
+        cameraNode.camera?.zNear = 0.5
+        cameraNode.camera?.zFar = 1000
+        let camDist = max(mapW, mapH) * 1.15
         cameraNode.position = SCNVector3(
             mapW / 2,
-            camDist * 0.9,
-            mapH / 2 + camDist * 0.4
+            camDist * 0.72,
+            mapH / 2 + camDist * 0.62
         )
         cameraNode.look(at: SCNVector3(mapW / 2, 0, mapH / 2))
         scene.rootNode.addChildNode(cameraNode)
 
-        // Lumière ambiante
-        let ambLight = SCNLight()
-        ambLight.type = .ambient
-        ambLight.intensity = 400
+        // Lumière ambiante douce
         let ambNode = SCNNode()
-        ambNode.light = ambLight
+        let amb = SCNLight()
+        amb.type = .ambient
+        amb.color = NSColor(white: 0.45, alpha: 1)
+        amb.intensity = 500
+        ambNode.light = amb
         scene.rootNode.addChildNode(ambNode)
 
-        // Lumière directionnelle
-        let dirLight = SCNLight()
-        dirLight.type = .directional
-        dirLight.intensity = 800
-        let dirNode = SCNNode()
-        dirNode.light = dirLight
-        dirNode.eulerAngles = SCNVector3(-CGFloat.pi / 3, CGFloat.pi / 4, 0)
-        scene.rootNode.addChildNode(dirNode)
+        // Lumière directionnelle principale (soleil)
+        let sunNode = SCNNode()
+        let sun = SCNLight()
+        sun.type = .directional
+        sun.color = NSColor(red: 1.0, green: 0.97, blue: 0.90, alpha: 1.0)
+        sun.intensity = 900
+        sun.castsShadow = true
+        sun.shadowRadius = 3.0
+        sun.shadowColor = NSColor(white: 0, alpha: 0.35)
+        sunNode.light = sun
+        sunNode.eulerAngles = SCNVector3(-CGFloat.pi / 3.5, CGFloat.pi / 6, 0)
+        scene.rootNode.addChildNode(sunNode)
+
+        // Lumière de remplissage (sky fill — contre-lumière douce)
+        let fillNode = SCNNode()
+        let fill = SCNLight()
+        fill.type = .directional
+        fill.color = NSColor(red: 0.65, green: 0.75, blue: 0.95, alpha: 1.0)
+        fill.intensity = 250
+        fillNode.light = fill
+        fillNode.eulerAngles = SCNVector3(CGFloat.pi / 4, -CGFloat.pi / 3, 0)
+        scene.rootNode.addChildNode(fillNode)
 
         return scene
     }
 
-    // Ajoute le nuage de points BCMDL, centré sur la carte de collision
+    // Point cloud BCH/TM — centré et scalé sur la zone de collision
     private func addBCMDLPointCloud(to scene: SCNScene, mapW: CGFloat, mapH: CGFloat) {
-        let centerX = mapW / 2
-        let centerZ = mapH / 2
-
-        // Centre du nuage de points
-        let sumX = bcmdlVertices.reduce(CGFloat(0)) { $0 + $1.x }
-        let sumZ = bcmdlVertices.reduce(CGFloat(0)) { $0 + $1.z }
         let count = CGFloat(bcmdlVertices.count)
-        let cloudCX = sumX / count
-        let cloudCZ = sumZ / count
+        guard count > 0 else { return }
 
-        // Échelle pour ajuster aux dimensions de la carte
-        let xs = bcmdlVertices.map { abs($0.x - cloudCX) }
-        let zs = bcmdlVertices.map { abs($0.z - cloudCZ) }
-        let maxX = xs.max() ?? 1
-        let maxZ = zs.max() ?? 1
-        let scaleX: CGFloat = maxX > 0 ? (mapW * 0.45) / maxX : 1
-        let scaleZ: CGFloat = maxZ > 0 ? (mapH * 0.45) / maxZ : 1
-        let scale = min(scaleX, scaleZ)
+        let sumX = bcmdlVertices.reduce(CGFloat(0)) { $0 + $1.x }
+        let sumY = bcmdlVertices.reduce(CGFloat(0)) { $0 + $1.y }
+        let sumZ = bcmdlVertices.reduce(CGFloat(0)) { $0 + $1.z }
+        let cx = sumX / count
+        let cy = sumY / count
+        let cz = sumZ / count
 
-        // Translater et scaler les vertices
-        let adjusted: [SCNVector3] = bcmdlVertices.map { v in
+        let maxX = bcmdlVertices.map { abs($0.x - cx) }.max() ?? 1
+        let maxZ = bcmdlVertices.map { abs($0.z - cz) }.max() ?? 1
+        let sx: CGFloat = maxX > 0.1 ? (mapW * 0.48) / maxX : 1
+        let sz: CGFloat = maxZ > 0.1 ? (mapH * 0.48) / maxZ : 1
+        let scale = min(sx, sz)
+
+        let adjusted: [SCNVector3] = Array(bcmdlVertices.prefix(4000)).map { v in
             SCNVector3(
-                (v.x - cloudCX) * scale + centerX,
-                v.y * 0.5 + 2.0,   // légèrement au-dessus du sol
-                (v.z - cloudCZ) * scale + centerZ
+                (v.x - cx) * scale + mapW / 2,
+                (v.y - cy) * 0.3 + 3.0,
+                (v.z - cz) * scale + mapH / 2
             )
         }
 
-        // Limiter à 5000 points pour les perfs
-        let limited = Array(adjusted.prefix(5000))
-
-        if let geo = BCMDLHelper.makePointCloud(vertices: limited,
-                                                 color: NSColor.systemYellow.withAlphaComponent(0.85)) {
-            let pointNode = SCNNode(geometry: geo)
-            scene.rootNode.addChildNode(pointNode)
+        if let geo = BCMDLHelper.makePointCloud(
+            vertices: adjusted,
+            color: NSColor(red: 1.0, green: 0.85, blue: 0.2, alpha: 0.9)
+        ) {
+            scene.rootNode.addChildNode(SCNNode(geometry: geo))
         }
     }
 }

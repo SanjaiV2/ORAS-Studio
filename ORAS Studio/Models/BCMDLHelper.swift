@@ -3,62 +3,46 @@ import SceneKit
 
 struct BCMDLHelper {
 
-    // Extrait les positions 3D depuis un buffer NW4C ou vertex raw
-    // Retourne les vertices (x, y, z) dans le système de coordonnées jeu
+    // Extrait les positions 3D depuis un fichier TM (a/2/5/7) ou buffer générique.
+    // Format TM : "TM" magic → BCH à l'offset 0x80.
+    // On scanne les triples f32 valides en excluant les vecteurs unitaires (normales).
     static func extractVertices(from data: Data) -> [SCNVector3] {
         guard data.count >= 32 else { return [] }
 
-        // Détecter le type : NW4C (commence avec header 0x1C/0xFEFF) ou raw floats
-        let isNW4C: Bool
-        if data.count >= 8 {
-            let hdrSz = data.withUnsafeBytes { $0.load(fromByteOffset: 0, as: UInt32.self) }
-            let bom   = data.withUnsafeBytes { $0.load(fromByteOffset: 4, as: UInt16.self) }
-            isNW4C = (hdrSz == 0x1C && bom == 0xFEFF)
-        } else {
-            isNW4C = false
-        }
+        // Détecter le format TM (terrain mesh ORAS) : magic "TM" à l'offset 0
+        let isTM: Bool = data.count >= 2
+            && data[0] == 0x54   // 'T'
+            && data[1] == 0x4D   // 'M'
 
-        let startOffset = isNW4C ? 0x1000 : 0  // NW4C vertex data après header+sections
-        let stride = 32  // 12B pos + 12B normal + 8B UV
-
-        var verts: [SCNVector3] = []
-        var off = startOffset
-        while off + 12 <= data.count {
-            let x = data.withUnsafeBytes { $0.load(fromByteOffset: off,     as: Float.self) }
-            let y = data.withUnsafeBytes { $0.load(fromByteOffset: off + 4, as: Float.self) }
-            let z = data.withUnsafeBytes { $0.load(fromByteOffset: off + 8, as: Float.self) }
-
-            if isValidVertex(x: x, y: y, z: z) {
-                verts.append(SCNVector3(CGFloat(x), CGFloat(y), CGFloat(z)))
-            }
-            off += stride
-        }
-
-        // Si pas assez de résultats, tenter un scan heuristique (stride 4)
-        if verts.count < 10 {
-            verts = heuristicScan(data: data, startAt: startOffset)
-        }
-
+        // Pour TM: le BCH utile commence à 0x80 et la zone de vertex intéressante
+        // est entre 0x80 et la fin du fichier. On saute le header NW4C/BCH (64B).
+        let scanStart = isTM ? 0x80 : 0
+        let verts = heuristicScan(data: data, startAt: scanStart, excludeNormals: true)
         return deduplicate(verts)
     }
 
-    // Filtre les valeurs aberrantes
-    private static func isValidVertex(x: Float, y: Float, z: Float) -> Bool {
+    // Filtre strict : position valide, ni nulle ni vecteur unitaire (normale)
+    private static func isPositionVertex(x: Float, y: Float, z: Float) -> Bool {
         guard x.isFinite && y.isFinite && z.isFinite else { return false }
-        guard x != 0 || y != 0 || z != 0 else { return false }  // skip zero
-        let range: Float = 200.0
-        return abs(x) < range && abs(y) < range && abs(z) < range
+        let mag = x*x + y*y + z*z
+        guard mag > 0.25 else { return false }               // skip near-zero
+        guard abs(x) < 150 && abs(y) < 150 && abs(z) < 150 else { return false }
+        // Exclure les vecteurs unitaires (normales BCH : longueur ≈ 1)
+        let len = mag.squareRoot()
+        if abs(len - 1.0) < 0.02 { return false }
+        return true
     }
 
-    // Scan heuristique : essaie stride=4 et cherche des triplets cohérents
-    private static func heuristicScan(data: Data, startAt: Int) -> [SCNVector3] {
+    // Scan heuristique stride=4 — collecte toutes les positions valides
+    private static func heuristicScan(data: Data, startAt: Int, excludeNormals: Bool) -> [SCNVector3] {
         var verts: [SCNVector3] = []
         var i = startAt
         while i + 12 <= data.count {
             let x = data.withUnsafeBytes { $0.load(fromByteOffset: i,     as: Float.self) }
             let y = data.withUnsafeBytes { $0.load(fromByteOffset: i + 4, as: Float.self) }
             let z = data.withUnsafeBytes { $0.load(fromByteOffset: i + 8, as: Float.self) }
-            if isValidVertex(x: x, y: y, z: z) {
+            if excludeNormals ? isPositionVertex(x: x, y: y, z: z)
+                               : (x.isFinite && y.isFinite && z.isFinite) {
                 verts.append(SCNVector3(CGFloat(x), CGFloat(y), CGFloat(z)))
             }
             i += 4
@@ -66,7 +50,7 @@ struct BCMDLHelper {
         return verts
     }
 
-    // Supprime les doublons (à 0.01 près)
+    // Déduplique à 0.1 unité près
     private static func deduplicate(_ verts: [SCNVector3]) -> [SCNVector3] {
         var seen = Set<String>()
         return verts.filter { v in
@@ -121,46 +105,122 @@ struct BCMDLHelper {
         return geo
     }
 
-    // Crée la géométrie de collision 3D (fallback si pas de BCMDL)
+    // Crée la géométrie de collision 3D haute-fidélité
+    // Murs = boîtes hautes, eau = plan sunken, herbes = tuiles légères
     static func makeCollisionGeometry(from map: CollisionMap) -> SCNNode {
         let root = SCNNode()
-        let tileSize: Float = 1.0
+        let ts: Float = 1.0  // tile size
 
+        // Sol de base — une grande tuile plate pour les zones passables
+        let floorGeo = SCNPlane(width: CGFloat(ts * Float(map.width)),
+                                height: CGFloat(ts * Float(map.height)))
+        let floorMat = SCNMaterial()
+        floorMat.diffuse.contents = NSColor(red: 0.52, green: 0.48, blue: 0.42, alpha: 1.0)
+        floorMat.specular.contents = NSColor.white
+        floorMat.shininess = 0.1
+        floorGeo.materials = [floorMat]
+        let floorNode = SCNNode(geometry: floorGeo)
+        floorNode.eulerAngles.x = -.pi / 2
+        floorNode.position = SCNVector3(CGFloat(ts * Float(map.width) / 2), -0.01,
+                                        CGFloat(ts * Float(map.height) / 2))
+        root.addChildNode(floorNode)
+
+        // Tuiles spéciales uniquement
         for y in 0..<map.height {
             for x in 0..<map.width {
                 let tile = map[x, y]
                 guard tile != .passable else { continue }
 
-                let height: Float
-                let color: NSColor
+                struct TileSpec { var h: Float; var y0: Float; var c: NSColor; var emR: Float = 0 }
+                let spec: TileSpec
                 switch tile {
-                case .blocked:          height = 1.5; color = NSColor(red: 0.8, green: 0.2, blue: 0.2, alpha: 0.7)
-                case .tallGrass:        height = 0.3; color = NSColor(red: 0.2, green: 0.7, blue: 0.2, alpha: 0.6)
-                case .water, .surfable: height = 0.1; color = NSColor(red: 0.2, green: 0.4, blue: 0.9, alpha: 0.6)
-                case .waterfall:        height = 0.8; color = NSColor(red: 0.3, green: 0.5, blue: 1.0, alpha: 0.7)
-                case .hole:             height = 0.1; color = NSColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 0.9)
-                case .ice:              height = 0.15; color = NSColor(red: 0.6, green: 0.9, blue: 0.9, alpha: 0.6)
-                case .sand:             height = 0.2; color = NSColor(red: 0.9, green: 0.8, blue: 0.3, alpha: 0.6)
-                default:                height = 0.1; color = NSColor.gray
+                case .blocked:
+                    // Mur solide avec brique
+                    spec = TileSpec(h: 2.8, y0: 1.4,
+                                    c: NSColor(red: 0.55, green: 0.48, blue: 0.42, alpha: 1.0))
+                case .tallGrass:
+                    spec = TileSpec(h: 0.35, y0: 0.175,
+                                    c: NSColor(red: 0.28, green: 0.68, blue: 0.22, alpha: 1.0))
+                case .water:
+                    spec = TileSpec(h: 0.08, y0: -0.02,
+                                    c: NSColor(red: 0.18, green: 0.42, blue: 0.88, alpha: 0.75))
+                case .surfable:
+                    spec = TileSpec(h: 0.08, y0: -0.02,
+                                    c: NSColor(red: 0.12, green: 0.55, blue: 0.95, alpha: 0.75))
+                case .waterfall:
+                    spec = TileSpec(h: 2.0, y0: 1.0,
+                                    c: NSColor(red: 0.35, green: 0.58, blue: 0.98, alpha: 0.8),
+                                    emR: 0.25)
+                case .hole:
+                    spec = TileSpec(h: 0.05, y0: -0.1,
+                                    c: NSColor(red: 0.06, green: 0.06, blue: 0.08, alpha: 1.0))
+                case .ice:
+                    spec = TileSpec(h: 0.12, y0: 0.06,
+                                    c: NSColor(red: 0.70, green: 0.92, blue: 0.96, alpha: 0.80),
+                                    emR: 0.15)
+                case .sand:
+                    spec = TileSpec(h: 0.18, y0: 0.09,
+                                    c: NSColor(red: 0.92, green: 0.82, blue: 0.48, alpha: 1.0))
+                default:
+                    spec = TileSpec(h: 0.10, y0: 0.05, c: .gray)
                 }
 
-                let box = SCNBox(width: CGFloat(tileSize * 0.9), height: CGFloat(height),
-                                 length: CGFloat(tileSize * 0.9), chamferRadius: 0.05)
+                let gap: CGFloat = tile == .blocked ? 0.02 : 0.06
+                let box = SCNBox(width:  CGFloat(ts) - gap,
+                                 height: CGFloat(spec.h),
+                                 length: CGFloat(ts) - gap,
+                                 chamferRadius: tile == .blocked ? 0.04 : 0.06)
                 let mat = SCNMaterial()
-                mat.diffuse.contents = color
-                mat.emission.contents = color.withAlphaComponent(0.1)
-                mat.isDoubleSided = true
+                mat.diffuse.contents = spec.c
+                if spec.emR > 0 {
+                    mat.emission.contents = spec.c.withAlphaComponent(CGFloat(spec.emR))
+                }
+                mat.specular.contents = NSColor.white
+                mat.shininess = tile == .ice ? 0.8 : (tile == .water || tile == .surfable ? 0.6 : 0.1)
+                mat.isDoubleSided = false
                 box.materials = [mat]
 
                 let node = SCNNode(geometry: box)
                 node.position = SCNVector3(
-                    CGFloat(Float(x) * tileSize + tileSize / 2),
-                    CGFloat(height / 2),
-                    CGFloat(Float(y) * tileSize + tileSize / 2)
+                    CGFloat(Float(x) * ts + ts / 2),
+                    CGFloat(spec.y0),
+                    CGFloat(Float(y) * ts + ts / 2)
                 )
                 root.addChildNode(node)
             }
         }
+
+        // Bordure décorative (mur de cadre autour de la zone)
+        addZoneBorder(to: root, width: map.width, height: map.height, tileSize: ts)
         return root
+    }
+
+    private static func addZoneBorder(to root: SCNNode, width: Int, height: Int, tileSize: Float) {
+        let w = Float(width) * tileSize
+        let h = Float(height) * tileSize
+        let wallH: Float = 0.5
+        let wallT: Float = 0.15
+        let wallColor = NSColor(red: 0.3, green: 0.28, blue: 0.25, alpha: 0.6)
+        let wallMat = SCNMaterial()
+        wallMat.diffuse.contents = wallColor
+        wallMat.isDoubleSided = true
+
+        func wall(pos: SCNVector3, ww: CGFloat, wl: CGFloat) {
+            let box = SCNBox(width: ww, height: CGFloat(wallH), length: wl, chamferRadius: 0)
+            box.materials = [wallMat]
+            let n = SCNNode(geometry: box)
+            n.position = pos
+            root.addChildNode(n)
+        }
+
+        // 4 côtés
+        wall(pos: SCNVector3(CGFloat(w/2), CGFloat(wallH/2), 0),
+             ww: CGFloat(w), wl: CGFloat(wallT))
+        wall(pos: SCNVector3(CGFloat(w/2), CGFloat(wallH/2), CGFloat(h)),
+             ww: CGFloat(w), wl: CGFloat(wallT))
+        wall(pos: SCNVector3(0, CGFloat(wallH/2), CGFloat(h/2)),
+             ww: CGFloat(wallT), wl: CGFloat(h))
+        wall(pos: SCNVector3(CGFloat(w), CGFloat(wallH/2), CGFloat(h/2)),
+             ww: CGFloat(wallT), wl: CGFloat(h))
     }
 }
