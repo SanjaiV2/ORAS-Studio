@@ -106,8 +106,10 @@ struct GARCExplorerView: View {
     }
 
     private func entryList(archive: GARCFile) -> some View {
-        List(archive.entries, selection: $selectedEntryIndex) { entry in
-            EntryRow(entry: entry)
+        let showZoneNames = selectedGARCPath == "a/0/1/2" || selectedGARCPath == "a/0/1/3"
+        return List(archive.entries, selection: $selectedEntryIndex) { entry in
+            EntryRow(entry: entry,
+                     zoneName: showZoneNames ? ZoneDictionary.name(for: entry.id) : nil)
                 .tag(entry.id)
         }
         .listStyle(.inset)
@@ -192,15 +194,24 @@ struct GARCExplorerView: View {
 
 private struct EntryRow: View {
     let entry: GARCEntry
+    var zoneName: String? = nil
 
     private var totalSize: Int { entry.subFiles.reduce(0) { $0 + $1.size } }
     private var hasLZ11: Bool { entry.subFiles.contains { $0.isLZ11Compressed } }
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(String(format: "%04d", entry.id))
-                .font(.system(.body, design: .monospaced))
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(String(format: "%04d", entry.id))
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                if let name = zoneName {
+                    Text(name)
+                        .font(.caption)
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                }
+            }
 
             Spacer()
 

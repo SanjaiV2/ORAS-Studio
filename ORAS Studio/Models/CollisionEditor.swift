@@ -178,6 +178,55 @@ struct CollisionMap: Equatable {
     }
 }
 
+// MARK: — Style de fond pour la grille de collision
+
+enum ZoneBackground: Equatable {
+    case none
+    case outdoor   // vert clair (herbe)
+    case indoor    // beige (plancher)
+    case cave      // gris foncé
+    case water     // bleu clair
+
+    var baseColor: Color {
+        switch self {
+        case .none:    return .clear
+        case .outdoor: return Color(red: 0.72, green: 0.85, blue: 0.60).opacity(0.25)
+        case .indoor:  return Color(red: 0.92, green: 0.82, blue: 0.68).opacity(0.30)
+        case .cave:    return Color(red: 0.35, green: 0.32, blue: 0.30).opacity(0.30)
+        case .water:   return Color(red: 0.45, green: 0.70, blue: 0.92).opacity(0.25)
+        }
+    }
+
+    var gridColor: Color {
+        switch self {
+        case .none:    return Color(white: 0.5, opacity: 0.25)
+        case .outdoor: return Color(red: 0.40, green: 0.60, blue: 0.25, opacity: 0.20)
+        case .indoor:  return Color(red: 0.60, green: 0.45, blue: 0.25, opacity: 0.20)
+        case .cave:    return Color(white: 0.25, opacity: 0.30)
+        case .water:   return Color(red: 0.20, green: 0.50, blue: 0.80, opacity: 0.20)
+        }
+    }
+}
+
+// MARK: — Marqueur d'entité de zone (NPC, furniture, warp, trigger)
+
+struct ZoneEntityMarker: Identifiable {
+    enum Kind { case npc, furniture, warp, trigger }
+    let id = UUID()
+    let x: Int   // en tuiles
+    let y: Int   // en tuiles
+    let kind: Kind
+
+    var color: Color {
+        switch kind {
+        case .npc:       return .orange
+        case .furniture: return Color(red: 0.6, green: 0.4, blue: 0.2)
+        case .warp:      return .blue
+        case .trigger:   return .yellow
+        }
+    }
+}
+
 // MARK: — Vue Canvas de la grille (réutilisée dans ZoneEditorView)
 
 struct CollisionGridCanvas: View {
@@ -187,17 +236,66 @@ struct CollisionGridCanvas: View {
     @Binding var brushRadius: Int
     let onChange: () -> Void
 
+    // Fond optionnel et overlay d'entités
+    var backgroundStyle: ZoneBackground = .none
+    var entityOverlay: [ZoneEntityMarker] = []
+
     var body: some View {
-        Canvas { ctx, _ in
+        Canvas { ctx, size in
+            // 1. Remplissage du fond
+            ctx.fill(Path(CGRect(origin: .zero, size: size)),
+                     with: .color(backgroundStyle.baseColor))
+
+            // 2. Motif de points tous les 2 tuiles (texture légère pour les fonds non-vides)
+            if backgroundStyle != .none {
+                let dotColor = backgroundStyle.gridColor
+                for row in stride(from: 0, through: map.height, by: 2) {
+                    for col in stride(from: 0, through: map.width, by: 2) {
+                        let cx = CGFloat(col) * tileSize
+                        let cy = CGFloat(row) * tileSize
+                        ctx.fill(Path(ellipseIn: CGRect(x: cx - 1, y: cy - 1, width: 2, height: 2)),
+                                 with: .color(dotColor))
+                    }
+                }
+            }
+
+            // 3. Tuiles de collision (passable et blocked à 0.75 opacity pour laisser apparaître le fond)
             for y in 0..<map.height {
                 for x in 0..<map.width {
                     let tile = map[x, y]
                     let rect = CGRect(x: CGFloat(x) * tileSize,
                                      y: CGFloat(y) * tileSize,
                                      width: tileSize, height: tileSize)
-                    ctx.fill(Path(rect), with: .color(tile.tileColor))
+                    let color: Color
+                    if backgroundStyle != .none &&
+                       (tile == .passable || tile == .blocked) {
+                        color = tile.tileColor.opacity(0.75)
+                    } else {
+                        color = tile.tileColor
+                    }
+                    ctx.fill(Path(rect), with: .color(color))
+                }
+            }
+
+            // 4. Marqueurs d'entités (petits cercles colorés de 6px de rayon)
+            for marker in entityOverlay {
+                let cx = CGFloat(marker.x) * tileSize + tileSize / 2
+                let cy = CGFloat(marker.y) * tileSize + tileSize / 2
+                let r: CGFloat = 6
+                let markerRect = CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2)
+                ctx.fill(Path(ellipseIn: markerRect), with: .color(marker.color))
+                ctx.stroke(Path(ellipseIn: markerRect),
+                           with: .color(.white.opacity(0.8)), lineWidth: 1)
+            }
+
+            // 5. Grille (lignes) avec couleur selon le fond
+            for y in 0..<map.height {
+                for x in 0..<map.width {
+                    let rect = CGRect(x: CGFloat(x) * tileSize,
+                                     y: CGFloat(y) * tileSize,
+                                     width: tileSize, height: tileSize)
                     ctx.stroke(Path(rect),
-                               with: .color(Color(white: 0.5, opacity: 0.25)),
+                               with: .color(backgroundStyle.gridColor),
                                lineWidth: 0.5)
                 }
             }

@@ -376,11 +376,20 @@ struct ZoneEditorView: View {
     @State private var brushRadius: Int = 0
     @State private var tileSize: CGFloat = 22
 
+    // Zone selector state
+    @State private var zoneIDs: [Int] = []
+    @State private var selectedZoneID: Int? = nil
+    @State private var loadingZones = false
+    @State private var background: ZoneBackground = .none
+    @State private var entityMarkers: [ZoneEntityMarker] = []
+
     private var collisionEditorView: some View {
         VStack(spacing: 0) {
             collisionToolbar
             Divider()
             HStack(spacing: 0) {
+                zoneListPanel.frame(width: 180)
+                Divider()
                 collisionLegend.frame(width: 160)
                 Divider()
                 ScrollView([.horizontal, .vertical]) {
@@ -389,11 +398,46 @@ struct ZoneEditorView: View {
                         tileSize: tileSize,
                         selectedType: $selectedTileType,
                         brushRadius: $brushRadius,
-                        onChange: { collDirty = true }
+                        onChange: { collDirty = true },
+                        backgroundStyle: background,
+                        entityOverlay: entityMarkers
                     )
                     .padding(10)
                 }
                 .frame(maxWidth: .infinity)
+            }
+        }
+        .task { await loadZoneList() }
+    }
+
+    // MARK: — Zone list panel
+
+    private var zoneListPanel: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Zones").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                if loadingZones { ProgressView().controlSize(.small) }
+            }
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            .background(.regularMaterial)
+            Divider()
+            if zoneIDs.isEmpty && !loadingZones {
+                Text("Aucun projet")
+                    .font(.caption).foregroundStyle(.tertiary)
+                    .padding()
+                Spacer()
+            } else {
+                List(zoneIDs, id: \.self, selection: $selectedZoneID) { id in
+                    Text(ZoneDictionary.label(for: id))
+                        .font(.system(.caption, design: .monospaced))
+                        .lineLimit(1)
+                        .tag(id)
+                }
+                .listStyle(.sidebar)
+                .onChange(of: selectedZoneID) { _, id in
+                    if let id { Task { await loadZone(id: id) } }
+                }
             }
         }
     }
@@ -601,6 +645,152 @@ struct ZoneEditorView: View {
             collDirty = false
             showSave("Collision sauvegardée (\(collision.width)×\(collision.height) tuiles)")
         } catch { showError(error.localizedDescription) }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // MARK: — Chargement des zones depuis le GARC a/0/1/3
+    // ══════════════════════════════════════════════════════════════════
+
+    private func loadZoneList() async {
+        guard let project = controller.project else { return }
+        loadingZones = true
+        if let garc = try? await project.garc(at: "a/0/1/3") {
+            zoneIDs = garc.entries.map { $0.id }
+        }
+        loadingZones = false
+    }
+
+    private func loadZone(id: Int) async {
+        guard let project = controller.project else { return }
+        guard let garc = try? await project.garc(at: "a/0/1/3"),
+              let entry = garc.entries.first(where: { $0.id == id }),
+              let sub = entry.subFiles.first else { return }
+
+        let decompressed = LZ11Decompressor.decompressIfNeeded(sub.rawData)
+
+        // Validate ZO magic
+        guard decompressed.count >= 8,
+              decompressed[0] == UInt8(ascii: "Z"),
+              decompressed[1] == UInt8(ascii: "O") else { return }
+
+        // Read Section 0 dimensions
+        let sectionCount = Int(decompressed.withUnsafeBytes {
+            $0.loadUnaligned(fromByteOffset: 2, as: UInt16.self)
+        })
+        let sec0Off = sectionCount >= 1
+            ? Int(decompressed.withUnsafeBytes {
+                $0.loadUnaligned(fromByteOffset: 4, as: UInt32.self)
+              })
+            : 4
+
+        var gridW = 40, gridH = 30
+        if sec0Off + 10 <= decompressed.count {
+            let rawW = Int(decompressed.withUnsafeBytes {
+                $0.loadUnaligned(fromByteOffset: sec0Off + 6, as: UInt16.self)
+            })
+            let rawH = Int(decompressed.withUnsafeBytes {
+                $0.loadUnaligned(fromByteOffset: sec0Off + 8, as: UInt16.self)
+            })
+
+            let knownSize = ZoneDictionary.defaultSize(for: id)
+            if knownSize.w != 40 || knownSize.h != 30 {
+                gridW = knownSize.w; gridH = knownSize.h
+            } else {
+                gridW = (rawW > 4 && rawW < 200) ? max(20, rawW) : 40
+                gridH = (rawH > 4 && rawH < 200) ? max(15, rawH) : 30
+            }
+        }
+
+        // Determine background style
+        let bg: ZoneBackground
+        let isKnownCave   = [21, 22, 23, 51, 52, 62, 69, 70, 79, 80, 103].contains(id)
+        let isKnownWater  = (68...72).contains(id) || (75...78).contains(id)
+        let isKnownIndoor = [0, 1, 2, 3, 9, 14, 15, 16, 17, 19, 21, 22, 23,
+                             29, 33, 34, 47, 55, 66, 74, 82].contains(id)
+        if isKnownCave        { bg = .cave }
+        else if isKnownWater  { bg = .water }
+        else if isKnownIndoor { bg = .indoor }
+        else                  { bg = .outdoor }
+
+        // Parse entity markers
+        let markers = parseEntityMarkers(from: decompressed, gridW: gridW, gridH: gridH)
+
+        await MainActor.run {
+            background    = bg
+            entityMarkers = markers
+            collision     = .defaultMap(width: gridW, height: gridH)
+            collDirty     = false
+        }
+    }
+
+    private func parseEntityMarkers(from zoData: Data, gridW: Int, gridH: Int) -> [ZoneEntityMarker] {
+        guard zoData.count > 8 else { return [] }
+        let sectionCount = Int(zoData.withUnsafeBytes {
+            $0.loadUnaligned(fromByteOffset: 2, as: UInt16.self)
+        })
+        guard sectionCount >= 2 else { return [] }
+        let sec1Off = Int(zoData.withUnsafeBytes {
+            $0.loadUnaligned(fromByteOffset: 8, as: UInt32.self)
+        })
+        let sec2Off = sectionCount >= 3
+            ? Int(zoData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 12, as: UInt32.self) })
+            : zoData.count
+        guard sec1Off < sec2Off, sec2Off <= zoData.count, sec1Off + 16 < zoData.count else { return [] }
+
+        // Header Section 1: furniture_count(u32), npc_count(u32), warp_count(u32)
+        var markers: [ZoneEntityMarker] = []
+        let furniCount = Int(zoData.withUnsafeBytes {
+            $0.loadUnaligned(fromByteOffset: sec1Off, as: UInt32.self)
+        })
+        let npcCount = Int(zoData.withUnsafeBytes {
+            $0.loadUnaligned(fromByteOffset: sec1Off + 4, as: UInt32.self)
+        })
+        let warpCount = Int(zoData.withUnsafeBytes {
+            $0.loadUnaligned(fromByteOffset: sec1Off + 8, as: UInt32.self)
+        })
+
+        // Limiter les counts pour éviter les valeurs aberrantes
+        guard furniCount < 200, npcCount < 200, warpCount < 200 else { return [] }
+
+        let furniSize = 22  // taille estimée d'un furniture
+        let npcSize   = 48  // taille estimée d'un NPC (EntityNPC struct 0x30 bytes)
+        let warpSize  = 12  // taille estimée d'un warp
+        var offset = sec1Off + 12
+
+        // Parse furniture
+        for _ in 0..<furniCount {
+            guard offset + furniSize <= sec2Off else { break }
+            let x = Int(zoData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset + 2, as: UInt16.self) })
+            let y = Int(zoData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset + 4, as: UInt16.self) })
+            let tileX = x / 8; let tileY = y / 8
+            if tileX < gridW * 4 && tileY < gridH * 4 && (tileX > 0 || tileY > 0) {
+                markers.append(ZoneEntityMarker(x: tileX, y: tileY, kind: .furniture))
+            }
+            offset += furniSize
+        }
+        // Parse NPCs
+        for _ in 0..<npcCount {
+            guard offset + npcSize <= sec2Off else { break }
+            let x = Int(zoData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset + 0x28, as: UInt16.self) })
+            let y = Int(zoData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset + 0x2A, as: UInt16.self) })
+            let tileX = x / 8; let tileY = y / 8
+            if tileX < gridW * 4 && tileY < gridH * 4 {
+                markers.append(ZoneEntityMarker(x: tileX, y: tileY, kind: .npc))
+            }
+            offset += npcSize
+        }
+        // Parse warps
+        for _ in 0..<warpCount {
+            guard offset + warpSize <= sec2Off else { break }
+            let x = Int(zoData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset + 2, as: UInt16.self) })
+            let y = Int(zoData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset + 4, as: UInt16.self) })
+            let tileX = x / 8; let tileY = y / 8
+            if tileX < gridW * 4 && tileY < gridH * 4 {
+                markers.append(ZoneEntityMarker(x: tileX, y: tileY, kind: .warp))
+            }
+            offset += warpSize
+        }
+        return markers
     }
 
     // ══════════════════════════════════════════════════════════════════
