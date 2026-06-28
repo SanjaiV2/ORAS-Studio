@@ -31,10 +31,12 @@ struct ScriptEditorView: View {
             } else if let err = loadError {
                 loadErrorView(err)
             } else {
-                HSplitView {
-                    zoneListColumn.frame(minWidth: 130, maxWidth: 175)
-                    subScriptColumn.frame(minWidth: 160, maxWidth: 230)
-                    instructionEditorColumn.frame(minWidth: 380)
+                HStack(spacing: 0) {
+                    zoneListColumn.frame(width: 160)
+                    Divider()
+                    subScriptColumn.frame(width: 205)
+                    Divider()
+                    instructionEditorColumn.frame(maxWidth: .infinity)
                 }
             }
         }

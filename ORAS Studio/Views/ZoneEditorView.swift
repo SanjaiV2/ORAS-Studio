@@ -120,9 +120,10 @@ struct ZoneEditorView: View {
     // ══════════════════════════════════════════════════════════════════
 
     private var cameraEditorView: some View {
-        HSplitView {
-            keyframeListPanel.frame(minWidth: 180, maxWidth: 220)
-            cameraDetailPanel.frame(minWidth: 360)
+        HStack(spacing: 0) {
+            keyframeListPanel.frame(width: 205)
+            Divider()
+            cameraDetailPanel.frame(maxWidth: .infinity)
         }
     }
 
@@ -379,8 +380,9 @@ struct ZoneEditorView: View {
         VStack(spacing: 0) {
             collisionToolbar
             Divider()
-            HSplitView {
-                collisionLegend.frame(minWidth: 140, maxWidth: 180)
+            HStack(spacing: 0) {
+                collisionLegend.frame(width: 160)
+                Divider()
                 ScrollView([.horizontal, .vertical]) {
                     CollisionGridCanvas(
                         map: $collision,
@@ -391,6 +393,7 @@ struct ZoneEditorView: View {
                     )
                     .padding(10)
                 }
+                .frame(maxWidth: .infinity)
             }
         }
     }

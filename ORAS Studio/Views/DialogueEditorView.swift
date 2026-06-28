@@ -45,10 +45,10 @@ struct DialogueEditorView: View {
         VStack(spacing: 0) {
             toolbar
             Divider()
-            HSplitView {
-                bankList
-                    .frame(minWidth: 180, maxWidth: 200)
-                lineEditor
+            HStack(spacing: 0) {
+                bankList.frame(width: 190)
+                Divider()
+                lineEditor.frame(maxWidth: .infinity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

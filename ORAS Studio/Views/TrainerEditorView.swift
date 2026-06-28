@@ -82,9 +82,10 @@ struct TrainerEditorView: View {
             } else if let err = loadError {
                 errorView(err)
             } else {
-                HSplitView {
-                    trainerList.frame(minWidth: 180, maxWidth: 220)
-                    trainerDetail
+                HStack(spacing: 0) {
+                    trainerList.frame(width: 200)
+                    Divider()
+                    trainerDetail.frame(maxWidth: .infinity)
                 }
             }
         }
