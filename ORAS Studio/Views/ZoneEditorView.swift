@@ -384,7 +384,7 @@ struct ZoneEditorView: View {
     @State private var background: ZoneBackground = .none
     @State private var entityMarkers: [ZoneEntityMarker] = []
     @State private var show3D: Bool = false
-    @State private var bcmdlVertices: [SCNVector3] = []
+    @State private var bchMeshes: [BCHParser.MeshData] = []
 
     private var collisionEditorView: some View {
         VStack(spacing: 0) {
@@ -399,7 +399,7 @@ struct ZoneEditorView: View {
                     if show3D {
                         ZoneSceneKitView(
                             collisionMap: collision,
-                            bcmdlVertices: bcmdlVertices,
+                            bchMeshes: bchMeshes,
                             entityMarkers: entityMarkers,
                             background: background
                         )
@@ -472,7 +472,7 @@ struct ZoneEditorView: View {
                 }
                 .listStyle(.sidebar)
                 .onChange(of: selectedZoneID) { _, id in
-                    bcmdlVertices = []
+                    bchMeshes = []
                     show3D = false
                     if let id { Task { await loadZone(id: id) } }
                 }
@@ -772,10 +772,10 @@ struct ZoneEditorView: View {
               let sub = garc.entries[garcIdx].subFiles.first else {
             return
         }
-        let raw = LZ11Decompressor.decompressIfNeeded(sub.rawData)
-        let verts = BCMDLHelper.extractVertices(from: raw)
+        let raw    = LZ11Decompressor.decompressIfNeeded(sub.rawData)
+        let meshes = BCHParser.parse(fileData: raw, isTM: true)
         await MainActor.run {
-            bcmdlVertices = verts
+            bchMeshes = meshes
         }
     }
 

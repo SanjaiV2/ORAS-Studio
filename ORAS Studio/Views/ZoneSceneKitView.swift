@@ -3,7 +3,7 @@ import SceneKit
 
 struct ZoneSceneKitView: View {
     let collisionMap: CollisionMap
-    let bcmdlVertices: [SCNVector3]
+    let bchMeshes: [BCHParser.MeshData]
     let entityMarkers: [ZoneEntityMarker]
     let background: ZoneBackground
 
@@ -55,9 +55,12 @@ struct ZoneSceneKitView: View {
             }
         }
 
-        // ── Overlay BCH optionnel (données TM brutes) ──
-        if !bcmdlVertices.isEmpty {
-            addBCMDLOverlay(to: scene, mapW: mapW, mapH: mapH)
+        // ── Géométrie réelle BCH (si disponible) ──
+        if !bchMeshes.isEmpty {
+            let bchNode = BCHParser.toSCNNode(meshes: bchMeshes, scale: 1.0 / 16.0)
+            // Recentrage sur la map de collision
+            bchNode.position = SCNVector3(cx, 0, cz)
+            scene.rootNode.addChildNode(bchNode)
         }
 
         // ── Caméra perspective 3/4 isométrique ──
@@ -183,29 +186,4 @@ struct ZoneSceneKitView: View {
         return node
     }
 
-    // MARK: — Overlay BCH
-
-    private func addBCMDLOverlay(to scene: SCNScene, mapW: CGFloat, mapH: CGFloat) {
-        let count = CGFloat(bcmdlVertices.count)
-        guard count > 0 else { return }
-        let cx = bcmdlVertices.reduce(CGFloat(0)) { $0 + $1.x } / count
-        let cy = bcmdlVertices.reduce(CGFloat(0)) { $0 + $1.y } / count
-        let cz = bcmdlVertices.reduce(CGFloat(0)) { $0 + $1.z } / count
-        let maxX = bcmdlVertices.map { abs($0.x - cx) }.max() ?? 1
-        let maxZ = bcmdlVertices.map { abs($0.z - cz) }.max() ?? 1
-        let scale = min(
-            maxX > 0.1 ? (mapW * 0.46) / maxX : 1,
-            maxZ > 0.1 ? (mapH * 0.46) / maxZ : 1
-        )
-        let adjusted: [SCNVector3] = Array(bcmdlVertices.prefix(3000)).map { v in
-            SCNVector3((v.x - cx) * scale + mapW / 2,
-                       (v.y - cy) * 0.25 + 2.8,
-                       (v.z - cz) * scale + mapH / 2)
-        }
-        if let geo = BCMDLHelper.makePointCloud(
-            vertices: adjusted,
-            color: NSColor(red: 1.0, green: 0.88, blue: 0.25, alpha: 0.85)) {
-            scene.rootNode.addChildNode(SCNNode(geometry: geo))
-        }
-    }
 }
