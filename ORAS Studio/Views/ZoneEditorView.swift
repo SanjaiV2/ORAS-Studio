@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import SceneKit
 
 // MARK: — Bouton de palette de tuile (extrait pour éviter la surcharge du type-checker)
 
@@ -382,6 +383,8 @@ struct ZoneEditorView: View {
     @State private var loadingZones = false
     @State private var background: ZoneBackground = .none
     @State private var entityMarkers: [ZoneEntityMarker] = []
+    @State private var show3D: Bool = false
+    @State private var bcmdlVertices: [SCNVector3] = []
 
     private var collisionEditorView: some View {
         VStack(spacing: 0) {
@@ -392,17 +395,50 @@ struct ZoneEditorView: View {
                 Divider()
                 collisionLegend.frame(width: 160)
                 Divider()
-                ScrollView([.horizontal, .vertical]) {
-                    CollisionGridCanvas(
-                        map: $collision,
-                        tileSize: tileSize,
-                        selectedType: $selectedTileType,
-                        brushRadius: $brushRadius,
-                        onChange: { collDirty = true },
-                        backgroundStyle: background,
-                        entityOverlay: entityMarkers
-                    )
-                    .padding(10)
+                ZStack {
+                    if show3D {
+                        ZoneSceneKitView(
+                            collisionMap: collision,
+                            bcmdlVertices: bcmdlVertices,
+                            entityMarkers: entityMarkers,
+                            background: background
+                        )
+                    } else {
+                        ScrollView([.horizontal, .vertical]) {
+                            CollisionGridCanvas(
+                                map: $collision,
+                                tileSize: tileSize,
+                                selectedType: $selectedTileType,
+                                brushRadius: $brushRadius,
+                                onChange: { collDirty = true },
+                                backgroundStyle: background,
+                                entityOverlay: entityMarkers
+                            )
+                            .padding(10)
+                        }
+                    }
+                }
+                .overlay(alignment: .topTrailing) {
+                    HStack(spacing: 6) {
+                        Button {
+                            show3D = false
+                        } label: {
+                            Label("Grille", systemImage: "square.grid.3x3.fill")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(show3D ? .secondary : .accentColor)
+
+                        Button {
+                            show3D = true
+                        } label: {
+                            Label("3D", systemImage: "cube.fill")
+                                .font(.caption)
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(show3D ? .accentColor : .secondary)
+                    }
+                    .padding(8)
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -436,6 +472,8 @@ struct ZoneEditorView: View {
                 }
                 .listStyle(.sidebar)
                 .onChange(of: selectedZoneID) { _, id in
+                    bcmdlVertices = []
+                    show3D = false
                     if let id { Task { await loadZone(id: id) } }
                 }
             }
@@ -720,6 +758,24 @@ struct ZoneEditorView: View {
             entityMarkers = markers
             collision     = .defaultMap(width: gridW, height: gridH)
             collDirty     = false
+        }
+        Task {
+            await loadBCMDLVertices(zoneID: id)
+        }
+    }
+
+    private func loadBCMDLVertices(zoneID: Int) async {
+        guard let project = controller.project else { return }
+        let garcIdx = zoneID % 173
+        guard let garc = try? await project.garc(at: "a/2/5/7"),
+              garcIdx < garc.entries.count,
+              let sub = garc.entries[garcIdx].subFiles.first else {
+            return
+        }
+        let raw = LZ11Decompressor.decompressIfNeeded(sub.rawData)
+        let verts = BCMDLHelper.extractVertices(from: raw)
+        await MainActor.run {
+            bcmdlVertices = verts
         }
     }
 

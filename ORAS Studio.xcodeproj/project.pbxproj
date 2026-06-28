@@ -37,6 +37,8 @@
 		AA000100000000000000067 /* EntityEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000100000000000000066 /* EntityEditorView.swift */; };
 		AA000100000000000000069 /* ScriptBuilderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000100000000000000068 /* ScriptBuilderView.swift */; };
 		AA00010000000000000006B /* FlagEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00010000000000000006A /* FlagEditorView.swift */; };
+		AA00010000000000000006D /* BCMDLHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00010000000000000006C /* BCMDLHelper.swift */; };
+		AA00010000000000000006F /* ZoneSceneKitView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00010000000000000006E /* ZoneSceneKitView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -73,6 +75,8 @@
 		AA000100000000000000066 /* EntityEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntityEditorView.swift; sourceTree = "<group>"; };
 		AA000100000000000000068 /* ScriptBuilderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptBuilderView.swift; sourceTree = "<group>"; };
 		AA00010000000000000006A /* FlagEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlagEditorView.swift; sourceTree = "<group>"; };
+		AA00010000000000000006C /* BCMDLHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BCMDLHelper.swift; sourceTree = "<group>"; };
+		AA00010000000000000006E /* ZoneSceneKitView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoneSceneKitView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -124,6 +128,7 @@
 				AA000100000000000000066 /* EntityEditorView.swift */,
 				AA000100000000000000068 /* ScriptBuilderView.swift */,
 				AA00010000000000000006A /* FlagEditorView.swift */,
+				AA00010000000000000006E /* ZoneSceneKitView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -145,6 +150,7 @@
 				AA000100000000000000060 /* ZoneDictionary.swift */,
 				AA000100000000000000062 /* ZoneEntityModel.swift */,
 				AA000100000000000000064 /* FieldScriptModel.swift */,
+				AA00010000000000000006C /* BCMDLHelper.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -264,6 +270,8 @@
 				AA000100000000000000067 /* EntityEditorView.swift in Sources */,
 				AA000100000000000000069 /* ScriptBuilderView.swift in Sources */,
 				AA00010000000000000006B /* FlagEditorView.swift in Sources */,
+				AA00010000000000000006D /* BCMDLHelper.swift in Sources */,
+				AA00010000000000000006F /* ZoneSceneKitView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
