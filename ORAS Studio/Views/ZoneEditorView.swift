@@ -816,11 +816,12 @@ struct ZoneEditorView: View {
         // Parse furniture
         for _ in 0..<furniCount {
             guard offset + furniSize <= sec2Off else { break }
+            let objID = zoData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: UInt16.self) }
             let x = Int(zoData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset + 2, as: UInt16.self) })
             let y = Int(zoData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset + 4, as: UInt16.self) })
             let tileX = x / 8; let tileY = y / 8
             if tileX < gridW * 4 && tileY < gridH * 4 && (tileX > 0 || tileY > 0) {
-                markers.append(ZoneEntityMarker(x: tileX, y: tileY, kind: .furniture))
+                markers.append(ZoneEntityMarker(x: tileX, y: tileY, kind: .furniture, objID: objID))
             }
             offset += furniSize
         }

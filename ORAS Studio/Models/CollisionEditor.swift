@@ -213,9 +213,10 @@ enum ZoneBackground: Equatable {
 struct ZoneEntityMarker: Identifiable {
     enum Kind { case npc, furniture, warp, trigger }
     let id = UUID()
-    let x: Int   // en tuiles
-    let y: Int   // en tuiles
+    let x: Int          // en tuiles
+    let y: Int          // en tuiles
     let kind: Kind
+    var objID: UInt16 = 0  // prop object ID (furniture only — distingue arbre vs bâtiment)
 
     var color: Color {
         switch kind {
