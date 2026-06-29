@@ -162,59 +162,62 @@ enum ProceduralTextureKit {
         return node
     }
 
-    private static func skyGradientImage(background: ZoneBackground) -> NSImage {
-        let size = 256
-        return draw(size: size) { ctx in
-            // Gradient vertical : bas → haut
-            let (top, bot): (NSColor, NSColor)
-            switch background {
-            case .outdoor:
-                top = NSColor(red: 0.30, green: 0.58, blue: 0.95, alpha: 1)
-                bot = NSColor(red: 0.72, green: 0.88, blue: 0.98, alpha: 1)
-            case .cave:
-                top = NSColor(red: 0.04, green: 0.03, blue: 0.02, alpha: 1)
-                bot = NSColor(red: 0.10, green: 0.08, blue: 0.06, alpha: 1)
-            case .indoor:
-                top = NSColor(red: 0.08, green: 0.08, blue: 0.10, alpha: 1)
-                bot = NSColor(red: 0.18, green: 0.17, blue: 0.15, alpha: 1)
-            case .water:
-                top = NSColor(red: 0.05, green: 0.20, blue: 0.55, alpha: 1)
-                bot = NSColor(red: 0.15, green: 0.40, blue: 0.80, alpha: 1)
-            default:
-                top = NSColor(red: 0.05, green: 0.05, blue: 0.08, alpha: 1)
-                bot = NSColor(red: 0.12, green: 0.12, blue: 0.16, alpha: 1)
-            }
-            // Dessin gradient
-            let colors = [bot.cgColor, top.cgColor] as CFArray
-            let locs: [CGFloat] = [0, 1]
-            if let cs = CGColorSpace(name: CGColorSpace.sRGB),
-               let grad = CGGradient(colorsSpace: cs, colors: colors, locations: locs) {
-                ctx.drawLinearGradient(grad,
-                    start: CGPoint(x: size/2, y: 0),
-                    end:   CGPoint(x: size/2, y: size),
-                    options: [])
-            }
-            // Quelques nuages simples (outdoor seulement)
-            if background == .outdoor {
-                ctx.setFillColor(NSColor(white: 1.0, alpha: 0.35).cgColor)
-                for cx in stride(from: 20, to: size, by: 80) {
-                    let cy = size - 60 - (cx % 30)
-                    ctx.fillEllipse(in: CGRect(x: cx, y: cy, width: 50, height: 18))
-                    ctx.fillEllipse(in: CGRect(x: cx+15, y: cy-10, width: 30, height: 20))
-                }
+    // Thread-safe : utilise CGContext directement, pas NSGraphicsContext.
+    private static func skyGradientImage(background: ZoneBackground) -> CGImage? {
+        let sz = 256
+        guard let ctx = CGContext(
+            data: nil, width: sz, height: sz,
+            bitsPerComponent: 8, bytesPerRow: sz * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+        ) else { return nil }
+
+        let (top, bot): ([CGFloat], [CGFloat])
+        switch background {
+        case .outdoor:
+            top = [0.30, 0.58, 0.95, 1]; bot = [0.72, 0.88, 0.98, 1]
+        case .cave:
+            top = [0.04, 0.03, 0.02, 1]; bot = [0.10, 0.08, 0.06, 1]
+        case .indoor:
+            top = [0.08, 0.08, 0.10, 1]; bot = [0.18, 0.17, 0.15, 1]
+        case .water:
+            top = [0.05, 0.20, 0.55, 1]; bot = [0.15, 0.40, 0.80, 1]
+        default:
+            top = [0.05, 0.05, 0.08, 1]; bot = [0.12, 0.12, 0.16, 1]
+        }
+
+        let cs = CGColorSpaceCreateDeviceRGB()
+        if let botColor = CGColor(colorSpace: cs, components: bot),
+           let topColor = CGColor(colorSpace: cs, components: top),
+           let grad = CGGradient(colorsSpace: cs,
+                                  colors: [botColor, topColor] as CFArray,
+                                  locations: [0, 1]) {
+            ctx.drawLinearGradient(grad,
+                start: CGPoint(x: sz/2, y: 0),
+                end:   CGPoint(x: sz/2, y: sz),
+                options: [])
+        }
+
+        if background == .outdoor {
+            let cloud = CGColor(colorSpace: cs, components: [1.0, 1.0, 1.0, 0.35])!
+            ctx.setFillColor(cloud)
+            for cxPos in stride(from: 20, to: sz, by: 80) {
+                let cyPos = sz - 60 - (cxPos % 30)
+                ctx.fillEllipse(in: CGRect(x: cxPos, y: cyPos, width: 50, height: 18))
+                ctx.fillEllipse(in: CGRect(x: cxPos+15, y: cyPos-10, width: 30, height: 20))
             }
         }
+
+        return ctx.makeImage()
     }
 
-    // MARK: — Utilitaire de dessin
+    // MARK: — Utilitaire de dessin (main thread uniquement — pour les fonctions NSImage ci-dessus)
 
     private static func draw(size: Int, _ block: (CGContext) -> Void) -> NSImage {
         let s = CGFloat(size)
         let image = NSImage(size: NSSize(width: s, height: s))
         image.lockFocus()
-        if let ctx = NSGraphicsContext.current?.cgContext {
-            block(ctx)
-        }
+        if let ctx = NSGraphicsContext.current?.cgContext { block(ctx) }
         image.unlockFocus()
         return image
     }

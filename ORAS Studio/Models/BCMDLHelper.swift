@@ -79,10 +79,9 @@ struct BCMDLHelper {
         let ts: CGFloat = 1.0
 
         // ── Étape 1 : plan de sol unique avec color-map ──
-        let groundTex = makeGroundTexture(map: map)
         let floorGeo  = SCNPlane(width: CGFloat(W) * ts, height: CGFloat(H) * ts)
         let floorMat  = SCNMaterial()
-        floorMat.diffuse.contents = groundTex
+        floorMat.diffuse.contents  = makeGroundTexture(map: map)  // CGImage, thread-safe
         floorMat.diffuse.wrapS    = .clamp
         floorMat.diffuse.wrapT    = .clamp
         floorMat.isDoubleSided    = true
@@ -139,50 +138,42 @@ struct BCMDLHelper {
         return container
     }
 
-    // MARK: — Texture de sol (color-map)
+    // MARK: — Texture de sol (color-map, thread-safe)
 
-    // Appelé sur le main thread depuis buildScene() (SwiftUI body) — sûr.
-    private static func makeGroundTexture(map: CollisionMap) -> NSImage {
-        let px = 8   // pixels par tuile
+    // Utilise CGContext directement — aucune dépendance NSGraphicsContext/main thread.
+    private static func makeGroundTexture(map: CollisionMap) -> CGImage? {
+        let px = 8
         let W = map.width, H = map.height
-        let img = NSImage(size: NSSize(width: W * px, height: H * px))
-        img.lockFocus()
-        defer { img.unlockFocus() }
-        guard let ctx = NSGraphicsContext.current?.cgContext else { return img }
+        let imgW = W * px, imgH = H * px
 
+        guard let ctx = CGContext(
+            data: nil, width: imgW, height: imgH,
+            bitsPerComponent: 8, bytesPerRow: imgW * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+        ) else { return nil }
+
+        let cs = CGColorSpaceCreateDeviceRGB()
         for gy in 0..<H {
             for gx in 0..<W {
-                let c: (CGFloat, CGFloat, CGFloat)
+                let comps: [CGFloat]
                 switch map[gx, gy] {
-                // Sol herbeux (passable + bloqué) → vert terrain
-                case .passable, .blocked:
-                    c = (0.290, 0.478, 0.220)
-                // Herbes hautes → vert foncé
-                case .tallGrass:
-                    c = (0.180, 0.370, 0.140)
-                // Eau / surf → bleu cyan
-                case .water, .surfable:
-                    c = (0.220, 0.600, 0.870)
-                // Cascade → bleu vif
-                case .waterfall:
-                    c = (0.300, 0.640, 0.910)
-                // Trou → quasi-noir
-                case .hole:
-                    c = (0.060, 0.055, 0.070)
-                // Glace → bleu pâle
-                case .ice:
-                    c = (0.670, 0.890, 0.920)
-                // Sable → ocre
-                case .sand:
-                    c = (0.780, 0.680, 0.420)
+                case .passable, .blocked: comps = [0.290, 0.478, 0.220, 1]
+                case .tallGrass:          comps = [0.180, 0.370, 0.140, 1]
+                case .water, .surfable:   comps = [0.220, 0.600, 0.870, 1]
+                case .waterfall:          comps = [0.300, 0.640, 0.910, 1]
+                case .hole:               comps = [0.060, 0.055, 0.070, 1]
+                case .ice:                comps = [0.670, 0.890, 0.920, 1]
+                case .sand:               comps = [0.780, 0.680, 0.420, 1]
                 }
-                ctx.setFillColor(NSColor(red: c.0, green: c.1, blue: c.2, alpha: 1).cgColor)
-                // NSImage : Y=0 en bas → inverser l'axe gy
-                let ry = (H - 1 - gy) * px
+                if let color = CGColor(colorSpace: cs, components: comps) {
+                    ctx.setFillColor(color)
+                }
+                let ry = (H - 1 - gy) * px   // Y=0 bas pour NSImage / SCNMaterial
                 ctx.fill(CGRect(x: gx * px, y: ry, width: px, height: px))
             }
         }
-        return img
+        return ctx.makeImage()
     }
 
     // MARK: — Classification des tuiles bloquées (BFS)
