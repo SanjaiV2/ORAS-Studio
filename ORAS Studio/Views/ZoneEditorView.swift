@@ -767,33 +767,132 @@ struct ZoneEditorView: View {
 
     private func loadTerrainMeshes(zoneID: Int, tmEntry: Int) async {
         guard let project = controller.project else { return }
+        print("[TERRAIN] zone=\(zoneID) tmEntry=\(tmEntry) — start")
 
-        // Primary: TM container from a/2/5/7 (has terrain BCH for indoor/cave zones)
-        if let garc = try? await project.garc(at: "a/2/5/7"),
-           tmEntry < garc.entries.count,
-           let sub = garc.entries[tmEntry].subFiles.first {
+        // ── 1. Terrain principal : PCContainer dans a/0/0/8 ──────────────────────────
+        // Chaque zone N a 15 entrées consécutives [N*15 .. N*15+14].
+        // La grande entrée "PC\x02\x00" (>50 KB) contient le BCH terrain à l'offset u32[4].
+        // GARCFile.readEntry lit uniquement l'entrée voulue sans charger les 1 GB du GARC.
+        let garc008URL = project.romfsURL.appending(path: "a/0/0/8")
+        if FileManager.default.fileExists(atPath: garc008URL.path(percentEncoded: false)) {
+            let base008 = zoneID * 15
+            for k in 0..<15 {
+                let idx = base008 + k
+                let rawData = await Task.detached(priority: .userInitiated) {
+                    GARCFile.readEntry(idx, from: garc008URL) ?? Data()
+                }.value
+                guard rawData.count > 0 else { continue }
+                let dec = LZ11Decompressor.decompressIfNeeded(rawData)
+                // Sélection : magic PC\x02\x00 ET fichier décompressé >50 KB
+                guard dec.count > 50_000, dec.count >= 16,
+                      dec[0] == 0x50, dec[1] == 0x43, dec[2] == 0x02, dec[3] == 0x00 else { continue }
+                // Lecture des offsets PCContainer : u32[4]=bch1Start, u32[8]=bch1End
+                let bch1Start = Int(dec.withUnsafeBytes {
+                    $0.loadUnaligned(fromByteOffset: 4, as: UInt32.self) })
+                let bch1End   = Int(dec.withUnsafeBytes {
+                    $0.loadUnaligned(fromByteOffset: 8, as: UInt32.self) })
+                guard bch1Start >= 0x10, bch1Start + 3 < dec.count,
+                      bch1End > bch1Start, bch1End <= dec.count else { continue }
+                // Vérification magic BCH à l'offset
+                guard dec[bch1Start] == 0x42, dec[bch1Start+1] == 0x43,
+                      dec[bch1Start+2] == 0x48 else { continue }
+                // BCH1 : terrain principal
+                let bch1Data = dec.subdata(in: bch1Start..<bch1End)
+                print("[TERRAIN] a/0/0/8[\(idx)] PC BCH1: \(bch1Data.count) B")
+                var allMeshes = await Task.detached(priority: .userInitiated) {
+                    BCHParser.parseWithTextures(fileData: bch1Data, isTM: false)
+                }.value
+                // BCH2 : géométrie complémentaire (si présente juste après BCH1)
+                let bch3Off = Int(dec.withUnsafeBytes {
+                    $0.loadUnaligned(fromByteOffset: 12, as: UInt32.self) })
+                let bch2End = (bch3Off > bch1End && bch3Off <= dec.count) ? bch3Off : dec.count
+                if bch1End + 3 < dec.count,
+                   dec[bch1End] == 0x42, dec[bch1End+1] == 0x43, dec[bch1End+2] == 0x48 {
+                    let bch2Data = dec.subdata(in: bch1End..<bch2End)
+                    print("[TERRAIN] PC BCH2: \(bch2Data.count) B")
+                    let meshes2 = await Task.detached(priority: .userInitiated) {
+                        BCHParser.parseWithTextures(fileData: bch2Data, isTM: false)
+                    }.value
+                    print("[TERRAIN] BCH2 → \(meshes2.count) meshes \(meshes2.reduce(0){$0+$1.vertices.count}) vtx")
+                    allMeshes.append(contentsOf: meshes2)
+                }
+                let meshes = allMeshes
+                let vtxCount = meshes.reduce(0) { $0 + $1.vertices.count }
+                print("[TERRAIN] PC total → \(meshes.count) meshes \(vtxCount) vertices")
+                if !meshes.isEmpty {
+                    // Bounding box pour calibrer l'échelle vs grille tuiles
+                    var mnX: Float = .infinity, mxX: Float = -.infinity
+                    var mnY: Float = .infinity, mxY: Float = -.infinity
+                    var mnZ: Float = .infinity, mxZ: Float = -.infinity
+                    for m in meshes { for v in m.vertices {
+                        mnX = min(mnX, v.position.x); mxX = max(mxX, v.position.x)
+                        mnY = min(mnY, v.position.y); mxY = max(mxY, v.position.y)
+                        mnZ = min(mnZ, v.position.z); mxZ = max(mxZ, v.position.z)
+                    }}
+                    print("[TERRAIN] BBox X[\(mnX)…\(mxX)] Y[\(mnY)…\(mxY)] Z[\(mnZ)…\(mxZ)]")
+                    // Normaliser les vertices en espace-tuile :
+                    // Le terrain BCH est en coordonnées monde 3DS (X symétrique autour de 0,
+                    // Z légèrement décalé). On recentre en X et Z, et on applique un scale
+                    // uniforme pour que l'étendue X couvre exactement collision.width tuiles.
+                    let cX = (mnX + mxX) / 2
+                    let cZ = (mnZ + mxZ) / 2
+                    let halfExtX = (mxX - mnX) / 2
+                    let tileHalfW = Float(collision.width) / 2
+                    let autoScale: Float = (halfExtX > 0 && collision.width > 0)
+                        ? tileHalfW / halfExtX : 1.0
+                    print("[TERRAIN] autoScale=\(autoScale) (tileW=\(collision.width) bcbhXHalf=\(halfExtX))")
+                    let normalised = meshes.map { mesh -> BCHParser.MeshData in
+                        var m = mesh
+                        m.vertices = mesh.vertices.map { v in
+                            var vd = v
+                            vd.position = SIMD3(
+                                (v.position.x - cX) * autoScale,
+                                v.position.y * autoScale,
+                                (v.position.z - cZ) * autoScale)
+                            return vd
+                        }
+                        return m
+                    }
+                    bchMeshes = normalised
+                    return
+                }
+            }
+        }
+
+        // ── 2. Fallback : TM container a/2/5/7 (props/décors) ──────────────────────
+        // TM[tmEntry] sc≥2 → terrain BCH en section 1 ; sc=1 → terrain BCH en section 0.
+        do {
+            let garc = try await project.garc(at: "a/2/5/7")
+            guard tmEntry < garc.entries.count,
+                  let sub = garc.entries[tmEntry].subFiles.first else {
+                print("[TERRAIN] TM[\(tmEntry)] hors bornes ou sans sous-fichier")
+                throw CancellationError()
+            }
+            print("[TERRAIN] TM a/2/5/7[\(tmEntry)] trouvé (\(sub.rawData.count) bytes)")
             let rawData = sub.rawData
             let meshes = await Task.detached(priority: .userInitiated) {
                 let raw = LZ11Decompressor.decompressIfNeeded(rawData)
-                return BCHParser.parse(fileData: raw, isTM: true)
+                return BCHParser.parseWithTextures(fileData: raw, isTM: true)
             }.value
+            print("[TERRAIN] TM → \(meshes.count) meshes \(meshes.reduce(0){$0+$1.vertices.count}) vertices")
             if !meshes.isEmpty {
                 bchMeshes = meshes
                 return
             }
+        } catch {
+            print("[TERRAIN] a/2/5/7 inaccessible : \(error.localizedDescription)")
         }
 
-        // Fallback: outdoor routes have no BCH in TM (sky only).
-        // a/0/1/4[zoneID] is the "AD" zone package with embedded BCH terrain.
+        // ── 3. Dernier recours : AD package a/0/1/4 ────────────────────────────────
         guard let adGarc = try? await project.garc(at: "a/0/1/4"),
               zoneID < adGarc.entries.count,
               let adSub = adGarc.entries[zoneID].subFiles.first else { return }
+        print("[TERRAIN] fallback AD a/0/1/4[\(zoneID)]")
         let adRaw = adSub.rawData
         let meshes = await Task.detached(priority: .userInitiated) {
             let adData = LZ11Decompressor.decompressIfNeeded(adRaw)
             let bchs = ADParser.extractBCHSections(from: adData)
-            // Parse all embedded BCH meshes; largest (main terrain) is bchs[0]
-            return bchs.flatMap { BCHParser.parse(fileData: $0, isTM: false) }
+            return bchs.flatMap { BCHParser.parseWithTextures(fileData: $0, isTM: false) }
         }.value
         bchMeshes = meshes
     }

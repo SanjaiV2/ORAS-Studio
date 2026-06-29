@@ -1,7 +1,8 @@
 import Foundation
 import SceneKit
+import CoreGraphics
 
-// Port fidèle de Ohana3DS-Rebirth/BCH.cs — extraction géométrie uniquement.
+// Port fidèle de Ohana3DS-Rebirth/BCH.cs — extraction géométrie + textures ETC1.
 // Supporte ORAS (backwardCompatibility = 0x21), conteneur TM (BCH à offset 0x80).
 
 struct BCHParser {
@@ -18,6 +19,7 @@ struct BCHParser {
         var vertices:      [VertexData]
         var indices:       [UInt32]
         var materialIndex: UInt16
+        var texture:       CGImage? = nil   // décodé par parseWithTextures()
     }
 
     // MARK: — Point d'entrée
@@ -28,21 +30,33 @@ struct BCHParser {
         if isTM {
             // Format TM (PkmnContainer) :  "TM" + sectionCount(u16) + offsets[sectionCount+1](u32 each)
             // section[i] start = u32 at [4 + i*4] ;  section[i] end = u32 at [4 + (i+1)*4]
-            // Le terrain principal est en section 1 (Ohana3DS GR.cs : container.content[1])
-            guard fileData.count >= 14,
+            // Pour sc≥2 : terrain BCH en section 1 (Ohana3DS GR.cs : container.content[1])
+            // Pour sc=1 : terrain BCH directement en section 0
+            guard fileData.count >= 12,
                   fileData[0] == 0x54, fileData[1] == 0x4D else { return [] }  // "TM"
             let sectionCount = Int(fileData.withUnsafeBytes {
                 $0.loadUnaligned(fromByteOffset: 2, as: UInt16.self)
             })
-            guard sectionCount >= 2 else { return [] }
-            let sec1Start = Int(fileData.withUnsafeBytes {
+            guard sectionCount >= 1 else { return [] }
+            let sec0Start = Int(fileData.withUnsafeBytes {
+                $0.loadUnaligned(fromByteOffset: 4, as: UInt32.self)
+            })
+            let sec0End = Int(fileData.withUnsafeBytes {
                 $0.loadUnaligned(fromByteOffset: 8, as: UInt32.self)
             })
-            let sec1End = Int(fileData.withUnsafeBytes {
-                $0.loadUnaligned(fromByteOffset: 12, as: UInt32.self)
-            })
-            guard sec1Start < sec1End, sec1End <= fileData.count else { return [] }
-            b = Array(fileData[sec1Start..<sec1End])
+            if sectionCount >= 2 {
+                // Section 1 = terrain principal
+                let sec1Start = sec0End
+                let sec1End = Int(fileData.withUnsafeBytes {
+                    $0.loadUnaligned(fromByteOffset: 12, as: UInt32.self)
+                })
+                guard sec1Start < sec1End, sec1End <= fileData.count else { return [] }
+                b = Array(fileData[sec1Start..<sec1End])
+            } else {
+                // Section 0 unique = terrain direct (zones sc=1)
+                guard sec0Start < sec0End, sec0End <= fileData.count else { return [] }
+                b = Array(fileData[sec0Start..<sec0End])
+            }
         } else {
             b = Array(fileData)
         }
@@ -73,11 +87,180 @@ struct BCHParser {
 
         let modPtrOff = Int(ru32(b, Int(mainHdrOff)))
         let modCount  = Int(ru32(b, Int(mainHdrOff) + 4))
+        print("[BCH] size=\(b.count) isTM=\(isTM) modPtrOff=0x\(String(modPtrOff,radix:16)) modCount=\(modCount)")
 
         var result: [MeshData] = []
         for mi in 0..<modCount {
             let modelOff = Int(ru32(b, modPtrOff + mi * 4))
-            result.append(contentsOf: parseModel(b, at: modelOff, bc: bc))
+            let meshes = parseModel(b, at: modelOff, bc: bc)
+            result.append(contentsOf: meshes)
+        }
+        return result
+    }
+
+    // MARK: — parseWithTextures : variante de parse() qui extrait aussi les textures ETC1
+
+    /// Comme parse(), mais charge et décode les textures ETC1/ETC1A4 embarquées dans le BCH,
+    /// et assigne chaque texture au bon mesh via son materialIndex.
+    static func parseWithTextures(fileData: Data, isTM: Bool = false) -> [MeshData] {
+        // ── Même extraction TM que parse() ──
+        var b: [UInt8]
+        if isTM {
+            guard fileData.count >= 12,
+                  fileData[0] == 0x54, fileData[1] == 0x4D else { return [] }
+            let sectionCount = Int(fileData.withUnsafeBytes {
+                $0.loadUnaligned(fromByteOffset: 2, as: UInt16.self) })
+            guard sectionCount >= 1 else { return [] }
+            let sec0Start = Int(fileData.withUnsafeBytes {
+                $0.loadUnaligned(fromByteOffset: 4, as: UInt32.self) })
+            let sec0End = Int(fileData.withUnsafeBytes {
+                $0.loadUnaligned(fromByteOffset: 8, as: UInt32.self) })
+            if sectionCount >= 2 {
+                let sec1Start = sec0End
+                let sec1End = Int(fileData.withUnsafeBytes {
+                    $0.loadUnaligned(fromByteOffset: 12, as: UInt32.self) })
+                guard sec1Start < sec1End, sec1End <= fileData.count else { return [] }
+                b = Array(fileData[sec1Start..<sec1End])
+            } else {
+                guard sec0Start < sec0End, sec0End <= fileData.count else { return [] }
+                b = Array(fileData[sec0Start..<sec0End])
+            }
+        } else {
+            b = Array(fileData)
+        }
+
+        guard b.count > 0x44,
+              b[0] == 0x42, b[1] == 0x43, b[2] == 0x48 else { return [] }
+
+        let bc         = b[4]
+        let mainHdrOff = ru32(b, 8)
+        let strTblOff  = ru32(b, 12)
+        let gpuCmdOff  = ru32(b, 16)
+        let dataOff    = ru32(b, 20)
+
+        var p = 24
+        var dataExtOff: UInt32 = 0
+        if bc > 0x20 { dataExtOff = ru32(b, p); p += 4 }
+        let relTblOff = ru32(b, p); p += 4
+        p += 16
+        if bc > 0x20 { p += 4 }
+        let relTblLen = ru32(b, p)
+
+        applyRelocation(&b, relTblOff: relTblOff, relTblLen: relTblLen, bc: bc,
+                        mainHdrOff: mainHdrOff, strTblOff: strTblOff,
+                        gpuCmdOff: gpuCmdOff, dataOff: dataOff, dataExtOff: dataExtOff)
+
+        // ── Extraction des textures ──
+        // Main header layout (bc=0x21) :
+        //   +0  modelsPointerOffset, +4 modelsCount
+        //   +60 texturesPointerOffset, +64 texturesCount
+        let texPtrTableOff = Int(ru32(b, Int(mainHdrOff) + 60))
+        let texCount       = Int(ru32(b, Int(mainHdrOff) + 64))
+        print("[BCH TEX] texPtrTableOff=0x\(String(texPtrTableOff, radix:16)) texCount=\(texCount)")
+
+        // Tableau indexé par position dans la liste (0..texCount-1)
+        var textures: [CGImage?] = Array(repeating: nil, count: max(texCount, 1))
+        // Mapping absOffset du struct textures → index dans textures[]
+        var texByPtr: [Int: Int] = [:]
+
+        if texPtrTableOff > 0 && texCount > 0 && texPtrTableOff + texCount * 4 <= b.count {
+            for ti in 0..<texCount {
+                let texStructOff = Int(ru32(b, texPtrTableOff + ti * 4))
+                guard texStructOff > 0, texStructOff + 0x24 <= b.count else { continue }
+
+                let dataAbsOff = Int(ru32(b, texStructOff + 0x00))
+                let mipCount   = Int(ru32(b, texStructOff + 0x04))
+                // +0x0C : encodage PICA200 (12=ETC1, 13=ETC1A4, 2=RGB565…)
+                let fmtWord    = Int(ru32(b, texStructOff + 0x0C))
+                let dataSize   = Int(ru32(b, texStructOff + 0x10))
+                let height     = Int(ru16(b, texStructOff + 0x18))
+                let width      = Int(ru16(b, texStructOff + 0x1A))
+                let nameAbsOff = Int(ru32(b, texStructOff + 0x20))
+
+                let name = readCString(b, at: nameAbsOff)
+                print("[BCH TEX \(ti)] struct=0x\(String(texStructOff,radix:16))"
+                    + " dataOff=0x\(String(dataAbsOff,radix:16))"
+                    + " fmt=\(fmtWord) sz=\(dataSize) \(width)×\(height) mips=\(mipCount) name='\(name)'")
+
+                texByPtr[texStructOff] = ti
+
+                guard width > 0, height > 0, dataAbsOff > 0,
+                      dataAbsOff < b.count else { continue }
+
+                let pixelData = Data(b[dataAbsOff..<min(dataAbsOff + max(dataSize, width*height), b.count)])
+
+                // Détecter ETC1 (0xC=12) ou ETC1A4 (0xD=13)
+                // Si fmtWord == 0 essayer de deviner depuis la taille
+                let fmt = fmtWord & 0xFF
+                let isETC1A4 = (fmt == 13) || (dataSize > 0 && dataSize == width * height)
+                let isETC1   = (fmt == 12) || (dataSize > 0 && dataSize == width * height / 2)
+
+                if isETC1 || isETC1A4 || fmt == 0 {
+                    let hasAlpha = isETC1A4 && !isETC1
+                    textures[ti] = ETC1Decoder.decode(data: pixelData,
+                                                       width: width, height: height,
+                                                       hasAlpha: hasAlpha)
+                    if textures[ti] != nil {
+                        print("[BCH TEX \(ti)] décodé ETC1\(hasAlpha ? "A4" : "") \(width)×\(height) ✓")
+                    }
+                } else {
+                    print("[BCH TEX \(ti)] format non-ETC1 (\(fmt)) — ignoré pour l'instant")
+                }
+            }
+        }
+
+        // ── Parsing des modèles (identique à parse()) avec assignation texture ──
+        let modPtrOff = Int(ru32(b, Int(mainHdrOff)))
+        let modCount  = Int(ru32(b, Int(mainHdrOff) + 4))
+        print("[BCH] size=\(b.count) isTM=\(isTM) modPtrOff=0x\(String(modPtrOff,radix:16)) modCount=\(modCount) [withTextures]")
+
+        // Trouver la table de matériaux du premier modèle pour mapper matIdx→texture
+        var matTexMap: [UInt16: CGImage?] = [:]
+        if modCount > 0 {
+            let modelOff  = Int(ru32(b, modPtrOff))
+            let matTblOff = Int(ru32(b, modelOff + 52))
+            let matTblCnt = Int(ru32(b, modelOff + 56))
+            print("[BCH MAT] matTblOff=0x\(String(matTblOff,radix:16)) matTblCnt=\(matTblCnt)")
+
+            for mi in 0..<matTblCnt {
+                guard matTblOff > 0, matTblOff + (mi+1)*4 <= b.count else { break }
+                let matStructOff = Int(ru32(b, matTblOff + mi * 4))
+                guard matStructOff > 0, matStructOff + 0x30 <= b.count else { continue }
+
+                // Tentative de trouver le pointeur vers la texture dans le struct matériau.
+                // On cherche un pointeur qui correspond à un struct texture connu (texByPtr).
+                var foundTex: CGImage? = nil
+                // Scan des premiers u32 du struct matériau pour trouver un ptr vers une texture
+                for fieldOff in stride(from: 0, to: min(0x80, b.count - matStructOff), by: 4) {
+                    let ptr = Int(ru32(b, matStructOff + fieldOff))
+                    if let texIdx = texByPtr[ptr], texIdx < textures.count {
+                        foundTex = textures[texIdx]
+                        print("[BCH MAT \(mi)] trouvé texture idx=\(texIdx) à champ +0x\(String(fieldOff,radix:16))")
+                        break
+                    }
+                }
+                // Fallback : matIdx → texIdx par modulo
+                if foundTex == nil && !textures.isEmpty {
+                    foundTex = textures[mi % textures.count]
+                }
+                matTexMap[UInt16(mi)] = foundTex
+            }
+        }
+
+        var result: [MeshData] = []
+        for mi in 0..<modCount {
+            let modelOff = Int(ru32(b, modPtrOff + mi * 4))
+            var meshes = parseModel(b, at: modelOff, bc: bc)
+            // Assigner texture via matTexMap
+            for i in 0..<meshes.count {
+                let matIdx = meshes[i].materialIndex
+                if let texOpt = matTexMap[matIdx] {
+                    meshes[i].texture = texOpt
+                } else if !textures.isEmpty {
+                    meshes[i].texture = textures[Int(matIdx) % textures.count]
+                }
+            }
+            result.append(contentsOf: meshes)
         }
         return result
     }
@@ -90,14 +273,31 @@ struct BCHParser {
             guard !mesh.vertices.isEmpty else { continue }
             guard let geo = buildGeometry(mesh: mesh, scale: scale) else { continue }
             let mat = SCNMaterial()
-            mat.diffuse.contents  = NSColor(red: 0.62, green: 0.54, blue: 0.44, alpha: 1)
-            mat.specular.contents = NSColor(white: 0.15, alpha: 1)
-            mat.shininess = 0.25
+            if let tex = mesh.texture {
+                mat.diffuse.contents  = tex
+                mat.diffuse.wrapS     = .repeat
+                mat.diffuse.wrapT     = .repeat
+                mat.specular.contents = NSColor(white: 0.08, alpha: 1)
+                mat.shininess = 0.12
+            } else {
+                mat.diffuse.contents  = NSColor(red: 0.62, green: 0.54, blue: 0.44, alpha: 1)
+                mat.specular.contents = NSColor(white: 0.15, alpha: 1)
+                mat.shininess = 0.25
+            }
             mat.isDoubleSided = true
+            mat.lightingModel = .blinn
             geo.materials = [mat]
             root.addChildNode(SCNNode(geometry: geo))
         }
         return root
+    }
+
+    // Lit une chaîne C (null-terminated) depuis b[] à l'offset donné.
+    private static func readCString(_ b: [UInt8], at offset: Int) -> String {
+        guard offset > 0, offset < b.count else { return "" }
+        var end = offset
+        while end < b.count && b[end] != 0 { end += 1 }
+        return String(bytes: b[offset..<end], encoding: .utf8) ?? ""
     }
 
     private static func buildGeometry(mesh: MeshData, scale: Float) -> SCNGeometry? {
@@ -222,8 +422,21 @@ struct BCHParser {
             let vshCmdWC   = Int(ru32(b, base + 12))
             let faceHdrOff = Int(ru32(b, base + 16))
             let faceHdrCnt = Int(ru32(b, base + 20))
+            // Block B : second command set (vertex buffer setup séparé dans certains BCH)
+            let vshCmdOff2 = Int(ru32(b, base + 24))
+            let vshCmdWC2  = Int(ru32(b, base + 28))
 
-            let vshSet = parsePICACommands(b, at: vshCmdOff, wordCount: vshCmdWC)
+            var vshSet = parsePICACommands(b, at: vshCmdOff, wordCount: vshCmdWC)
+            if vshCmdOff2 > 0 && vshCmdWC2 > 0 {
+                let vshSet2 = parsePICACommands(b, at: vshCmdOff2, wordCount: vshCmdWC2)
+                // Fusionner : Block B complète Block A (vertex buffer souvent dans Block B)
+                for (k, v) in vshSet2.cmds where vshSet.cmds[k] == nil || vshSet.cmds[k] == 0 {
+                    vshSet.cmds[k] = v
+                }
+                for (k, v) in vshSet2.floatUniforms where vshSet.floatUniforms[k] == nil {
+                    vshSet.floatUniforms[k] = v
+                }
+            }
 
             // Uniforms : reg6 = positionOffset [W,Z,Y,X], reg7 = scales [...,posScale,...,tex0Scale]
             let reg6 = vshSet.floatUniforms[6] ?? []
