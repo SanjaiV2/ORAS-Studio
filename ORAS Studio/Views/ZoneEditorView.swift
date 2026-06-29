@@ -790,61 +790,76 @@ struct ZoneEditorView: View {
         let sec2Off = sectionCount >= 3
             ? Int(zoData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 12, as: UInt32.self) })
             : zoData.count
-        guard sec1Off < sec2Off, sec2Off <= zoData.count, sec1Off + 16 < zoData.count else { return [] }
+        guard sec1Off < sec2Off, sec2Off <= zoData.count, sec1Off + 20 < zoData.count else { return [] }
 
-        // Header Section 1: furniture_count(u32), npc_count(u32), warp_count(u32)
         var markers: [ZoneEntityMarker] = []
-        let furniCount = Int(zoData.withUnsafeBytes {
-            $0.loadUnaligned(fromByteOffset: sec1Off, as: UInt32.self)
-        })
-        let npcCount = Int(zoData.withUnsafeBytes {
-            $0.loadUnaligned(fromByteOffset: sec1Off + 4, as: UInt32.self)
-        })
-        let warpCount = Int(zoData.withUnsafeBytes {
-            $0.loadUnaligned(fromByteOffset: sec1Off + 8, as: UInt32.self)
-        })
+        // Format ZO section 1 (confirmé par dump hex) :
+        // +0  u32 : taille totale données entités (ex. 580)
+        // +4  u8  : furni_count
+        // +5  u8  : npc_count
+        // +6  u8  : warp_count
+        // +7  u8  : trigger_count
+        // +8..+19 : inconnu (12 bytes)
+        // +20 : données entités (furniture → NPC → warp → trigger)
+        let furniCount = Int(zoData[sec1Off + 4])
+        let npcCount   = Int(zoData[sec1Off + 5])
+        let warpCount  = Int(zoData[sec1Off + 6])
+        let trigCount  = Int(zoData[sec1Off + 7])
 
-        // Limiter les counts pour éviter les valeurs aberrantes
-        guard furniCount < 200, npcCount < 200, warpCount < 200 else { return [] }
+        guard furniCount < 200, npcCount < 200, warpCount < 200, trigCount < 200 else { return [] }
 
-        let furniSize = 22  // taille estimée d'un furniture
-        let npcSize   = 48  // taille estimée d'un NPC (EntityNPC struct 0x30 bytes)
-        let warpSize  = 12  // taille estimée d'un warp
-        var offset = sec1Off + 12
+        // Struct sizes confirmed: 1×40 + 11×48 + 1×12 = 580 = entityDataSize
+        // Warp struct: src_x u8 +0, src_y u8 +1, dst_x u8 +2, dst_y u8 +3, dst_zone u16 +4, dst_warp u16 +6
+        let furniSize = 40
+        let npcSize   = 48
+        let warpSize  = 12
+        let trigSize  = 16
+        var offset = sec1Off + 20  // 20-byte header
 
-        // Parse furniture
+        // Furniture: objID u16 +0, x u16 +2, y u16 +4
         for _ in 0..<furniCount {
             guard offset + furniSize <= sec2Off else { break }
             let objID = zoData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: UInt16.self) }
             let x = Int(zoData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset + 2, as: UInt16.self) })
             let y = Int(zoData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset + 4, as: UInt16.self) })
             let tileX = x / 8; let tileY = y / 8
-            if tileX < gridW * 4 && tileY < gridH * 4 && (tileX > 0 || tileY > 0) {
+            if tileX < gridW * 8 && tileY < gridH * 8 {
                 markers.append(ZoneEntityMarker(x: tileX, y: tileY, kind: .furniture, objID: objID))
             }
             offset += furniSize
         }
-        // Parse NPCs
+        // NPC: X u16 +0x0C, Y u16 +0x0E
         for _ in 0..<npcCount {
             guard offset + npcSize <= sec2Off else { break }
-            let x = Int(zoData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset + 0x28, as: UInt16.self) })
-            let y = Int(zoData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset + 0x2A, as: UInt16.self) })
+            let x = Int(zoData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset + 0x0C, as: UInt16.self) })
+            let y = Int(zoData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset + 0x0E, as: UInt16.self) })
             let tileX = x / 8; let tileY = y / 8
-            if tileX < gridW * 4 && tileY < gridH * 4 {
+            if tileX < gridW * 8 && tileY < gridH * 8 {
                 markers.append(ZoneEntityMarker(x: tileX, y: tileY, kind: .npc))
             }
             offset += npcSize
         }
-        // Parse warps
+        // Warp: src_x u8 +0, src_y u8 +1
         for _ in 0..<warpCount {
             guard offset + warpSize <= sec2Off else { break }
-            let x = Int(zoData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset + 2, as: UInt16.self) })
-            let y = Int(zoData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset + 4, as: UInt16.self) })
+            let x = Int(zoData[offset])
+            let y = Int(zoData[offset + 1])
             let tileX = x / 8; let tileY = y / 8
-            if tileX < gridW * 4 && tileY < gridH * 4 {
+            if tileX < gridW * 8 && tileY < gridH * 8 {
                 markers.append(ZoneEntityMarker(x: tileX, y: tileY, kind: .warp))
             }
             offset += warpSize
+        }
+        // Trigger: x u16 +0, y u16 +2 (offsets à confirmer)
+        for _ in 0..<trigCount {
+            guard offset + trigSize <= sec2Off else { break }
+            let x = Int(zoData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset, as: UInt16.self) })
+            let y = Int(zoData.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: offset + 2, as: UInt16.self) })
+            let tileX = x / 8; let tileY = y / 8
+            if tileX < gridW * 8 && tileY < gridH * 8 {
+                markers.append(ZoneEntityMarker(x: tileX, y: tileY, kind: .trigger))
+            }
+            offset += trigSize
         }
         return markers
     }

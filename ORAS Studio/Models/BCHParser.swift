@@ -34,21 +34,14 @@ struct BCHParser {
             let sectionCount = Int(fileData.withUnsafeBytes {
                 $0.loadUnaligned(fromByteOffset: 2, as: UInt16.self)
             })
-            guard sectionCount >= 2 else {
-                print("[BCH] TM entry a seulement \(sectionCount) section(s) — pas de BCH terrain")
-                return []
-            }
+            guard sectionCount >= 2 else { return [] }
             let sec1Start = Int(fileData.withUnsafeBytes {
                 $0.loadUnaligned(fromByteOffset: 8, as: UInt32.self)
             })
             let sec1End = Int(fileData.withUnsafeBytes {
                 $0.loadUnaligned(fromByteOffset: 12, as: UInt32.self)
             })
-            guard sec1Start < sec1End, sec1End <= fileData.count else {
-                print("[BCH] sec1 invalide: start=\(sec1Start) end=\(sec1End) fileSize=\(fileData.count)")
-                return []
-            }
-            print("[BCH] TM sections=\(sectionCount) sec1[\(sec1Start)..\(sec1End)] size=\(sec1End-sec1Start)")
+            guard sec1Start < sec1End, sec1End <= fileData.count else { return [] }
             b = Array(fileData[sec1Start..<sec1End])
         } else {
             b = Array(fileData)
@@ -74,23 +67,17 @@ struct BCHParser {
         if bc > 0x20 { p += 4 }             // skip dataExtendedLength
         let relTblLen = ru32(b, p)           // = 80
 
-        print("[BCH] bchSize=\(b.count) bc=0x\(String(bc,radix:16)) mainHdrOff=0x\(String(mainHdrOff,radix:16)) relTblOff=0x\(String(relTblOff,radix:16)) relTblLen=\(relTblLen)")
-
         applyRelocation(&b, relTblOff: relTblOff, relTblLen: relTblLen, bc: bc,
                         mainHdrOff: mainHdrOff, strTblOff: strTblOff,
                         gpuCmdOff: gpuCmdOff, dataOff: dataOff, dataExtOff: dataExtOff)
 
         let modPtrOff = Int(ru32(b, Int(mainHdrOff)))
         let modCount  = Int(ru32(b, Int(mainHdrOff) + 4))
-        print("[BCH] modPtrOff=0x\(String(modPtrOff,radix:16)) modCount=\(modCount)")
 
         var result: [MeshData] = []
         for mi in 0..<modCount {
             let modelOff = Int(ru32(b, modPtrOff + mi * 4))
-            print("[BCH] model[\(mi)] at offset 0x\(String(modelOff,radix:16))")
-            let meshes = parseModel(b, at: modelOff, bc: bc)
-            print("[BCH] model[\(mi)] → \(meshes.count) meshes, \(meshes.reduce(0){$0+$1.vertices.count}) vertices")
-            result.append(contentsOf: meshes)
+            result.append(contentsOf: parseModel(b, at: modelOff, bc: bc))
         }
         return result
     }
