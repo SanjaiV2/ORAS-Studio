@@ -704,64 +704,56 @@ struct ZoneEditorView: View {
               let entry = garc.entries.first(where: { $0.id == id }),
               let sub = entry.subFiles.first else { return }
 
-        let decompressed = LZ11Decompressor.decompressIfNeeded(sub.rawData)
+        // Capture les bytes bruts sur le main actor, puis décompresse + parse hors thread
+        let rawData = sub.rawData
+        struct ZoneResult {
+            var bg: ZoneBackground; var markers: [ZoneEntityMarker]; var gridW, gridH: Int
+        }
+        let result = await Task.detached(priority: .userInitiated) { () -> ZoneResult in
+            let decompressed = LZ11Decompressor.decompressIfNeeded(rawData)
+            guard decompressed.count >= 8,
+                  decompressed[0] == UInt8(ascii: "Z"),
+                  decompressed[1] == UInt8(ascii: "O")
+            else { return ZoneResult(bg: .none, markers: [], gridW: 40, gridH: 30) }
 
-        // Validate ZO magic
-        guard decompressed.count >= 8,
-              decompressed[0] == UInt8(ascii: "Z"),
-              decompressed[1] == UInt8(ascii: "O") else { return }
+            let sectionCount = Int(decompressed.withUnsafeBytes {
+                $0.loadUnaligned(fromByteOffset: 2, as: UInt16.self) })
+            let sec0Off = sectionCount >= 1
+                ? Int(decompressed.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 4, as: UInt32.self) })
+                : 4
 
-        // Read Section 0 dimensions
-        let sectionCount = Int(decompressed.withUnsafeBytes {
-            $0.loadUnaligned(fromByteOffset: 2, as: UInt16.self)
-        })
-        let sec0Off = sectionCount >= 1
-            ? Int(decompressed.withUnsafeBytes {
-                $0.loadUnaligned(fromByteOffset: 4, as: UInt32.self)
-              })
-            : 4
-
-        var gridW = 40, gridH = 30
-        if sec0Off + 10 <= decompressed.count {
-            let rawW = Int(decompressed.withUnsafeBytes {
-                $0.loadUnaligned(fromByteOffset: sec0Off + 6, as: UInt16.self)
-            })
-            let rawH = Int(decompressed.withUnsafeBytes {
-                $0.loadUnaligned(fromByteOffset: sec0Off + 8, as: UInt16.self)
-            })
-
-            let knownSize = ZoneDictionary.defaultSize(for: id)
-            if knownSize.w != 40 || knownSize.h != 30 {
-                gridW = knownSize.w; gridH = knownSize.h
-            } else {
-                gridW = (rawW > 4 && rawW < 200) ? max(20, rawW) : 40
-                gridH = (rawH > 4 && rawH < 200) ? max(15, rawH) : 30
+            var gridW = 40, gridH = 30
+            if sec0Off + 10 <= decompressed.count {
+                let rawW = Int(decompressed.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: sec0Off + 6, as: UInt16.self) })
+                let rawH = Int(decompressed.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: sec0Off + 8, as: UInt16.self) })
+                let knownSize = ZoneDictionary.defaultSize(for: id)
+                if knownSize.w != 40 || knownSize.h != 30 {
+                    gridW = knownSize.w; gridH = knownSize.h
+                } else {
+                    gridW = (rawW > 4 && rawW < 200) ? max(20, rawW) : 40
+                    gridH = (rawH > 4 && rawH < 200) ? max(15, rawH) : 30
+                }
             }
-        }
 
-        // Determine background style
-        let bg: ZoneBackground
-        let isKnownCave   = [21, 22, 23, 51, 52, 62, 69, 70, 79, 80, 103].contains(id)
-        let isKnownWater  = (68...72).contains(id) || (75...78).contains(id)
-        let isKnownIndoor = [0, 1, 2, 3, 9, 14, 15, 16, 17, 19, 21, 22, 23,
-                             29, 33, 34, 47, 55, 66, 74, 82].contains(id)
-        if isKnownCave        { bg = .cave }
-        else if isKnownWater  { bg = .water }
-        else if isKnownIndoor { bg = .indoor }
-        else                  { bg = .outdoor }
+            let isKnownCave   = [21, 22, 23, 51, 52, 62, 69, 70, 79, 80, 103].contains(id)
+            let isKnownWater  = (68...72).contains(id) || (75...78).contains(id)
+            let isKnownIndoor = [0, 1, 2, 3, 9, 14, 15, 16, 17, 19, 21, 22, 23,
+                                 29, 33, 34, 47, 55, 66, 74, 82].contains(id)
+            let bg: ZoneBackground
+            if isKnownCave        { bg = .cave }
+            else if isKnownWater  { bg = .water }
+            else if isKnownIndoor { bg = .indoor }
+            else                  { bg = .outdoor }
 
-        // Parse entity markers
-        let markers = parseEntityMarkers(from: decompressed, gridW: gridW, gridH: gridH)
+            let markers = ZoneEditorView.parseEntityMarkers(from: decompressed, gridW: gridW, gridH: gridH)
+            return ZoneResult(bg: bg, markers: markers, gridW: gridW, gridH: gridH)
+        }.value
 
-        await MainActor.run {
-            background    = bg
-            entityMarkers = markers
-            collision     = .defaultMap(width: gridW, height: gridH)
-            collDirty     = false
-        }
-        Task {
-            await loadBCMDLVertices(zoneID: id)
-        }
+        background    = result.bg
+        entityMarkers = result.markers
+        collision     = .defaultMap(width: result.gridW, height: result.gridH)
+        collDirty     = false
+        Task { await loadBCMDLVertices(zoneID: id) }
     }
 
     private func loadBCMDLVertices(zoneID: Int) async {
@@ -769,17 +761,16 @@ struct ZoneEditorView: View {
         let garcIdx = zoneID % 173
         guard let garc = try? await project.garc(at: "a/2/5/7"),
               garcIdx < garc.entries.count,
-              let sub = garc.entries[garcIdx].subFiles.first else {
-            return
-        }
-        let raw    = LZ11Decompressor.decompressIfNeeded(sub.rawData)
-        let meshes = BCHParser.parse(fileData: raw, isTM: true)
-        await MainActor.run {
-            bchMeshes = meshes
-        }
+              let sub = garc.entries[garcIdx].subFiles.first else { return }
+        let rawData = sub.rawData
+        let meshes = await Task.detached(priority: .userInitiated) {
+            let raw = LZ11Decompressor.decompressIfNeeded(rawData)
+            return BCHParser.parse(fileData: raw, isTM: true)
+        }.value
+        bchMeshes = meshes
     }
 
-    private func parseEntityMarkers(from zoData: Data, gridW: Int, gridH: Int) -> [ZoneEntityMarker] {
+    private static func parseEntityMarkers(from zoData: Data, gridW: Int, gridH: Int) -> [ZoneEntityMarker] {
         guard zoData.count > 8 else { return [] }
         let sectionCount = Int(zoData.withUnsafeBytes {
             $0.loadUnaligned(fromByteOffset: 2, as: UInt16.self)

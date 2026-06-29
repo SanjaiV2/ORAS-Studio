@@ -97,13 +97,13 @@ final class ORASProject: ObservableObject {
         guard FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) else {
             throw ORASError.missingGARC(relativePath)
         }
-        let data = try Data(contentsOf: url)
-        do {
-            let garc = try GARCFile(data: data)
-            loadedGARCs[relativePath] = garc
-            return garc
-        } catch {
-            throw ORASError.invalidGARC(relativePath)
-        }
+        // Lecture disque + parsing GARC hors main thread
+        let garc = try await Task.detached(priority: .userInitiated) {
+            let data = try Data(contentsOf: url)
+            do { return try GARCFile(data: data) }
+            catch { throw ORASError.invalidGARC(relativePath) }
+        }.value
+        loadedGARCs[relativePath] = garc
+        return garc
     }
 }
