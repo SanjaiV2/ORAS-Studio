@@ -23,27 +23,49 @@ struct BCHParser {
     // MARK: — Point d'entrée
 
     static func parse(fileData: Data, isTM: Bool = false) -> [MeshData] {
-        let bchStart = isTM ? 0x80 : 0
-        guard fileData.count > bchStart + 0x44 else { return [] }
-
         // Copie mutable — la relocation patche les offsets en place (comme Ohana3DS)
-        var b = Array(fileData[bchStart...])
+        var b: [UInt8]
+        if isTM {
+            // Format TM (PkmnContainer) :  "TM" + sectionCount(u16) + offsets[sectionCount+1](u32 each)
+            // section[i] start = u32 at [4 + i*4] ;  section[i] end = u32 at [4 + (i+1)*4]
+            // Le terrain principal est en section 1 (Ohana3DS GR.cs : container.content[1])
+            guard fileData.count >= 14,
+                  fileData[0] == 0x54, fileData[1] == 0x4D else { return [] }  // "TM"
+            let sectionCount = Int(fileData.withUnsafeBytes {
+                $0.loadUnaligned(fromByteOffset: 2, as: UInt16.self)
+            })
+            guard sectionCount >= 2 else { return [] }   // pas de BCH terrain
+            let sec1Start = Int(fileData.withUnsafeBytes {
+                $0.loadUnaligned(fromByteOffset: 8, as: UInt32.self)
+            })
+            let sec1End = Int(fileData.withUnsafeBytes {
+                $0.loadUnaligned(fromByteOffset: 12, as: UInt32.self)
+            })
+            guard sec1Start < sec1End, sec1End <= fileData.count else { return [] }
+            b = Array(fileData[sec1Start..<sec1End])
+        } else {
+            b = Array(fileData)
+        }
+
+        guard b.count > 0x44 else { return [] }
 
         guard b.count > 8, b[0] == 0x42, b[1] == 0x43, b[2] == 0x48 else { return [] }
 
-        let bc         = b[8]
-        let mainHdrOff = ru32(b, 12)
-        let strTblOff  = ru32(b, 16)
-        let gpuCmdOff  = ru32(b, 20)
-        let dataOff    = ru32(b, 24)
+        // Ohana3DS IOUtils.readString(input, 0) ne déplace PAS la position (advancePosition=false).
+        // Ensuite Seek(4) → pos=4, puis ReadByte() → bc est à l'octet 4, pas 8.
+        let bc         = b[4]           // backwardCompatibility = 0x21 pour ORAS
+        let mainHdrOff = ru32(b, 8)     // = 0x44 (header principal des modèles)
+        let strTblOff  = ru32(b, 12)    // = 0x1b40
+        let gpuCmdOff  = ru32(b, 16)    // = 0x1e40
+        let dataOff    = ru32(b, 20)    // = 0x3380
 
-        var p = 28
+        var p = 24
         var dataExtOff: UInt32 = 0
-        if bc > 0x20 { dataExtOff = ru32(b, p); p += 4 }
-        let relTblOff = ru32(b, p); p += 4
-        p += 16                              // 4 × longueur de section
-        if bc > 0x20 { p += 4 }             // dataExtendedLength
-        let relTblLen = ru32(b, p)
+        if bc > 0x20 { dataExtOff = ru32(b, p); p += 4 }   // = 0x5100, p=28
+        let relTblOff = ru32(b, p); p += 4                  // = 0x1afc, p=32
+        p += 16                              // skip mainHdrLen+strTblLen+gpuCmdLen+dataLen
+        if bc > 0x20 { p += 4 }             // skip dataExtendedLength
+        let relTblLen = ru32(b, p)           // = 80
 
         applyRelocation(&b, relTblOff: relTblOff, relTblLen: relTblLen, bc: bc,
                         mainHdrOff: mainHdrOff, strTblOff: strTblOff,

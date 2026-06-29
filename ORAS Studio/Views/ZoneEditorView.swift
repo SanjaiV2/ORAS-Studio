@@ -708,19 +708,28 @@ struct ZoneEditorView: View {
         let rawData = sub.rawData
         struct ZoneResult {
             var bg: ZoneBackground; var markers: [ZoneEntityMarker]; var gridW, gridH: Int
+            var modelEntry: Int  // u16[2] de ZoneData → index GARC a/2/5/7
         }
         let result = await Task.detached(priority: .userInitiated) { () -> ZoneResult in
             let decompressed = LZ11Decompressor.decompressIfNeeded(rawData)
             guard decompressed.count >= 8,
                   decompressed[0] == UInt8(ascii: "Z"),
                   decompressed[1] == UInt8(ascii: "O")
-            else { return ZoneResult(bg: .none, markers: [], gridW: 40, gridH: 30) }
+            else { return ZoneResult(bg: .none, markers: [], gridW: 40, gridH: 30, modelEntry: 0) }
 
             let sectionCount = Int(decompressed.withUnsafeBytes {
                 $0.loadUnaligned(fromByteOffset: 2, as: UInt16.self) })
             let sec0Off = sectionCount >= 1
                 ? Int(decompressed.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 4, as: UInt32.self) })
                 : 4
+
+            // u16[2] à (sec0Off+4) = index du modèle terrain dans GARC a/2/5/7
+            var modelEntry = 0
+            if sec0Off + 6 <= decompressed.count {
+                modelEntry = Int(decompressed.withUnsafeBytes {
+                    $0.loadUnaligned(fromByteOffset: sec0Off + 4, as: UInt16.self)
+                })
+            }
 
             var gridW = 40, gridH = 30
             if sec0Off + 10 <= decompressed.count {
@@ -746,22 +755,21 @@ struct ZoneEditorView: View {
             else                  { bg = .outdoor }
 
             let markers = ZoneEditorView.parseEntityMarkers(from: decompressed, gridW: gridW, gridH: gridH)
-            return ZoneResult(bg: bg, markers: markers, gridW: gridW, gridH: gridH)
+            return ZoneResult(bg: bg, markers: markers, gridW: gridW, gridH: gridH, modelEntry: modelEntry)
         }.value
 
         background    = result.bg
         entityMarkers = result.markers
         collision     = .defaultMap(width: result.gridW, height: result.gridH)
         collDirty     = false
-        Task { await loadBCMDLVertices(zoneID: id) }
+        Task { await loadBCMDLVertices(entryIndex: result.modelEntry) }
     }
 
-    private func loadBCMDLVertices(zoneID: Int) async {
+    private func loadBCMDLVertices(entryIndex: Int) async {
         guard let project = controller.project else { return }
-        let garcIdx = zoneID % 173
         guard let garc = try? await project.garc(at: "a/2/5/7"),
-              garcIdx < garc.entries.count,
-              let sub = garc.entries[garcIdx].subFiles.first else { return }
+              entryIndex < garc.entries.count,
+              let sub = garc.entries[entryIndex].subFiles.first else { return }
         let rawData = sub.rawData
         let meshes = await Task.detached(priority: .userInitiated) {
             let raw = LZ11Decompressor.decompressIfNeeded(rawData)
