@@ -762,18 +762,38 @@ struct ZoneEditorView: View {
         entityMarkers = result.markers
         collision     = .defaultMap(width: result.gridW, height: result.gridH)
         collDirty     = false
-        Task { await loadBCMDLVertices(entryIndex: result.modelEntry) }
+        Task { await loadTerrainMeshes(zoneID: id, tmEntry: result.modelEntry) }
     }
 
-    private func loadBCMDLVertices(entryIndex: Int) async {
+    private func loadTerrainMeshes(zoneID: Int, tmEntry: Int) async {
         guard let project = controller.project else { return }
-        guard let garc = try? await project.garc(at: "a/2/5/7"),
-              entryIndex < garc.entries.count,
-              let sub = garc.entries[entryIndex].subFiles.first else { return }
-        let rawData = sub.rawData
+
+        // Primary: TM container from a/2/5/7 (has terrain BCH for indoor/cave zones)
+        if let garc = try? await project.garc(at: "a/2/5/7"),
+           tmEntry < garc.entries.count,
+           let sub = garc.entries[tmEntry].subFiles.first {
+            let rawData = sub.rawData
+            let meshes = await Task.detached(priority: .userInitiated) {
+                let raw = LZ11Decompressor.decompressIfNeeded(rawData)
+                return BCHParser.parse(fileData: raw, isTM: true)
+            }.value
+            if !meshes.isEmpty {
+                bchMeshes = meshes
+                return
+            }
+        }
+
+        // Fallback: outdoor routes have no BCH in TM (sky only).
+        // a/0/1/4[zoneID] is the "AD" zone package with embedded BCH terrain.
+        guard let adGarc = try? await project.garc(at: "a/0/1/4"),
+              zoneID < adGarc.entries.count,
+              let adSub = adGarc.entries[zoneID].subFiles.first else { return }
+        let adRaw = adSub.rawData
         let meshes = await Task.detached(priority: .userInitiated) {
-            let raw = LZ11Decompressor.decompressIfNeeded(rawData)
-            return BCHParser.parse(fileData: raw, isTM: true)
+            let adData = LZ11Decompressor.decompressIfNeeded(adRaw)
+            let bchs = ADParser.extractBCHSections(from: adData)
+            // Parse all embedded BCH meshes; largest (main terrain) is bchs[0]
+            return bchs.flatMap { BCHParser.parse(fileData: $0, isTM: false) }
         }.value
         bchMeshes = meshes
     }
