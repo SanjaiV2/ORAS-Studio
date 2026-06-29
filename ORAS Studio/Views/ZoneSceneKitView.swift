@@ -1,5 +1,30 @@
 import SwiftUI
 import SceneKit
+import AppKit
+
+// NSViewRepresentable wrapping SCNView pour éviter le freeze Metal de SceneView.
+// SCNView.prepare() pré-compile les shaders GPU en arrière-plan avant le swap de scène.
+private struct SCNViewRepresentable: NSViewRepresentable {
+    let pendingScene: SCNScene
+
+    func makeNSView(context: Context) -> SCNView {
+        let v = SCNView()
+        v.allowsCameraControl = true
+        v.autoenablesDefaultLighting = false
+        v.antialiasingMode = .multisampling4X
+        v.backgroundColor = .black
+        v.showsStatistics = false
+        return v
+    }
+
+    func updateNSView(_ nsView: SCNView, context: Context) {
+        guard nsView.scene !== pendingScene else { return }
+        // Pré-chauffe shaders + upload GPU en arrière-plan, puis swap sans freeze.
+        nsView.prepare([pendingScene as Any]) { _ in
+            DispatchQueue.main.async { nsView.scene = self.pendingScene }
+        }
+    }
+}
 
 struct ZoneSceneKitView: View {
     let collisionMap: CollisionMap
@@ -12,15 +37,7 @@ struct ZoneSceneKitView: View {
 
     var body: some View {
         ZStack {
-            SceneView(
-                scene: scene,
-                options: [
-                    .allowsCameraControl,
-                    .autoenablesDefaultLighting,
-                    .temporalAntialiasingEnabled
-                ]
-            )
-            .background(Color.black)
+            SCNViewRepresentable(pendingScene: scene)
 
             if building {
                 ProgressView("Construction…")
@@ -31,11 +48,11 @@ struct ZoneSceneKitView: View {
         // Déclenche une reconstruction uniquement quand les données changent
         .task(id: sceneKey) {
             building = true
-            let map   = collisionMap
+            let map    = collisionMap
             let meshes = bchMeshes
-            let marks = entityMarkers
-            let bg    = background
-            let built = await Task.detached(priority: .userInitiated) {
+            let marks  = entityMarkers
+            let bg     = background
+            let built  = await Task.detached(priority: .userInitiated) {
                 Self.buildScene(collisionMap: map, bchMeshes: meshes,
                                 entityMarkers: marks, background: bg)
             }.value
