@@ -1,0 +1,27 @@
+version: 1.0.{build}
+image: Visual Studio 2022
+configuration: Release
+platform: Any CPU
+before_build:
+- pwsh: nuget restore
+build:
+  project: CTR Studio.sln
+  verbosity: minimal
+install:
+  - cd %APPVEYOR_BUILD_FOLDER%
+  - git submodule update --init --recursive
+after_build:
+- cmd: >-
+    7z a CtrStudio-Latest.zip "%APPVEYOR_BUILD_FOLDER%\CTR Studio\bin\Release\net6.0\"
+
+
+    appveyor PushArtifact "CtrStudio-Latest.zip"
+artifacts:
+- path: CtrStudio-Latest.zip
+  name: CtrStudio
+deploy:
+- provider: GitHub
+  auth_token:
+    secure: cU87aOEy4F3ryNAjszwRJm6bEKEa/KJ09sSVj+nk8DFCPKQwwXfWgkxbcRg+W+uB
+  repository: MapStudioProject/CTR-Studio
+  artifact: CtrStudio

@@ -245,29 +245,29 @@ struct ZoneSceneKitView: View {
     // MARK: — Éclairage 3-points
 
     private static func addLighting(to scene: SCNScene, background: ZoneBackground) {
+        // Ambiant léger — base d'illumination sans surexposer les textures
         let amb = SCNLight(); amb.type = .ambient
-        amb.intensity = background == .cave ? 700 : 550
+        amb.intensity = background == .cave ? 400 : 180
         amb.color = NSColor(white: 1.0, alpha: 1)
         scene.rootNode.addChildNode(SCNNode().then { $0.light = amb })
 
-        // Soleil presque vertical (angle ORAS map viewer ≈ 70° du sol)
+        // Soleil ORAS — intensité calibrée pour ne pas saturer (diffuse + ambient ≤ 1.0)
         let sun = SCNLight(); sun.type = .directional
         sun.color = NSColor(red: 1.0, green: 0.97, blue: 0.90, alpha: 1)
-        sun.intensity = background == .cave ? 250 : 1200
+        sun.intensity = background == .cave ? 250 : 680
         sun.castsShadow = true
         sun.shadowRadius = 1.5
-        sun.shadowColor  = NSColor(white: 0, alpha: 0.25)
+        sun.shadowColor  = NSColor(white: 0, alpha: 0.22)
         sun.shadowSampleCount = 4
         sun.shadowMapSize  = CGSize(width: 2048, height: 2048)
         let sunNode = SCNNode(); sunNode.light = sun
-        // Lumière venant de l'arrière-gauche-haut (typique vue ORAS)
         sunNode.eulerAngles = SCNVector3(-CGFloat.pi * 0.38, -CGFloat.pi / 5, 0)
         scene.rootNode.addChildNode(sunNode)
 
         // Lumière de remplissage douce (côté avant)
         let fill = SCNLight(); fill.type = .directional
         fill.color     = NSColor(red: 0.55, green: 0.70, blue: 1.0, alpha: 1)
-        fill.intensity = 320
+        fill.intensity = 140
         let fillNode = SCNNode(); fillNode.light = fill
         fillNode.eulerAngles = SCNVector3(CGFloat.pi / 5, CGFloat.pi / 4, 0)
         scene.rootNode.addChildNode(fillNode)

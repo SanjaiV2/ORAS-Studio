@@ -100,14 +100,18 @@ struct BCHParser {
 
     // MARK: — extractTextures : lit uniquement les textures d'un BCH (typiquement un conteneur PT)
 
-    /// Extrait et décode les textures ETC1/ETC1A4 d'un fichier BCH (sans parser la géométrie).
-    /// Le BCH peut être le contenu brut OU être encapsulé dans un conteneur PT (cherche la magic BCH).
-    /// Retourne un tableau [CGImage?] indexé par position dans la liste de textures BCH.
+    /// Extrait et décode les textures d'un fichier BCH sans parser la géométrie.
+    /// Le BCH peut être brut OU encapsulé dans un conteneur PT (cherche la magic BCH).
+    /// Format réel ORAS (bc=0x21) : le "struct texture" est un tableau de triplets
+    /// (gpu_cmd_ptr, cmd_count) pointant vers des buffers de commandes PICA200.
+    /// Les vraies dimensions + adresse + format se lisent dans les registres GPU :
+    ///   REG 0x82 → taille (width en bits 31-16, height en bits 15-0)
+    ///   REG 0x85 → adresse absolue des pixels (bit 31 = marqueur reloc, à masquer)
+    ///   REG 0x8E → format PICA (7=L8, 12=ETC1, 13=ETC1A4)
     static func extractTextures(from fileData: Data) -> [CGImage?] {
-        // Trouver le début du BCH dans le buffer (peut être précédé d'un header PT, PB, PK…)
         let bchStart = findBCHStart(in: fileData)
         guard bchStart >= 0 else {
-            print("[BCH TEX] aucun magic BCH trouvé dans le fichier \(fileData.count) B")
+            print("[BCH TEX] aucun magic BCH dans \(fileData.count) B")
             return []
         }
         var b = Array(fileData[bchStart...])
@@ -132,7 +136,10 @@ struct BCHParser {
 
         let texPtrTableOff = Int(ru32(b, Int(mainHdrOff) + 36))
         let texCount       = Int(ru32(b, Int(mainHdrOff) + 40))
-        print("[BCH TEX EXT] bchStart=0x\(String(bchStart,radix:16)) texPtrOff=0x\(String(texPtrTableOff,radix:16)) texCount=\(texCount)")
+        print("[BCH TEX] mainHdr=0x\(String(mainHdrOff,radix:16))"
+            + " gpuCmd=0x\(String(gpuCmdOff,radix:16))"
+            + " data=0x\(String(dataOff,radix:16))"
+            + " texPtrOff=0x\(String(texPtrTableOff,radix:16)) count=\(texCount)")
 
         guard texPtrTableOff > 0, texCount > 0,
               texPtrTableOff + texCount * 4 <= b.count else { return [] }
@@ -140,49 +147,184 @@ struct BCHParser {
         var results: [CGImage?] = Array(repeating: nil, count: texCount)
         for ti in 0..<texCount {
             let tsOff = Int(ru32(b, texPtrTableOff + ti * 4))
-            guard tsOff > 0, tsOff + 0x24 <= b.count else { continue }
+            guard tsOff > 0, tsOff + 8 <= b.count else { continue }
 
-            // Dump hex brut du struct (0x30 premiers bytes) pour diagnostiquer le layout
-            if ti == 0 {
-                let end = min(tsOff + 0x30, b.count)
-                let hexBytes = b[tsOff..<end].map { String(format: "%02x", $0) }.joined(separator: " ")
-                print("[BCH TEX STRUCT0 RAW @0x\(String(tsOff,radix:16))] \(hexBytes)")
+            // tsOff pointe vers un triplet (gpu_cmd_ptr, cmd_count_u32).
+            // gpu_cmd_ptr est relocalisé → adresse absolue dans b[].
+            let cmdBufPtr = Int(ru32(b, tsOff))
+            guard cmdBufPtr >= 0, cmdBufPtr + 8 <= b.count else { continue }
+
+            // Scanner les commandes GPU PICA200 : paires (data_u32, header_u32)
+            // header bits 15-0 = registre ; on cherche 0x82, 0x85, 0x8E
+            var width = 0, height = 0, fmt = 7, dataAddr = 0
+            let cmdEnd = min(cmdBufPtr + 96, b.count - 7)  // au plus ~12 commandes
+            var off = cmdBufPtr
+            while off < cmdEnd {
+                let cmdData = ru32(b, off)
+                let cmdHdr  = ru32(b, off + 4)
+                let reg     = Int(cmdHdr & 0xFFFF)
+                switch reg {
+                case 0x82:  // TEX0_SIZE : width en bits 31-16, height en bits 15-0
+                    width  = Int((cmdData >> 16) & 0xFFFF)
+                    height = Int(cmdData & 0xFFFF)
+                case 0x85:  // TEX0_ADDR : adresse absolue (bit 31 = marqueur reloc 0x27)
+                    dataAddr = Int(cmdData & 0x7FFFFFFF)
+                case 0x8E:  // TEX0_FORMAT : 7=L8, 12=ETC1, 13=ETC1A4
+                    fmt = Int(cmdData & 0xF)
+                default: break
+                }
+                off += 8
             }
 
-            let dataAbsOff = Int(ru32(b, tsOff + 0x00))
-            let fmtWord    = Int(ru32(b, tsOff + 0x0C))
-            let dataSize   = Int(ru32(b, tsOff + 0x10))
-            let height     = Int(ru16(b, tsOff + 0x18))
-            let width      = Int(ru16(b, tsOff + 0x1A))
-            let nameAbsOff = Int(ru32(b, tsOff + 0x20))
-            let name = readCString(b, at: nameAbsOff)
+            guard width > 0, height > 0, dataAddr > 0, dataAddr < b.count else {
+                print("[BCH TEX \(ti)] skip — w=\(width) h=\(height) addr=0x\(String(dataAddr,radix:16))")
+                continue
+            }
+            print("[BCH TEX \(ti)] \(width)×\(height) fmt=\(fmt) addr=0x\(String(dataAddr,radix:16))")
 
-            print("[BCH TEX EXT \(ti)] struct=0x\(String(tsOff,radix:16))"
-                + " data=0x\(String(dataAbsOff,radix:16))"
-                + " fmt=\(fmtWord) sz=\(dataSize) \(width)×\(height) name='\(name)'")
+            // Octets par pixel selon format PICA200
+            let bpp: Int
+            switch fmt {
+            case 0:  bpp = 4   // RGBA8888
+            case 1:  bpp = 3   // RGB888
+            case 5:  bpp = 2   // IA8
+            case 7:  bpp = 1   // L8
+            case 12: bpp = 0   // ETC1 (0.5 byte/pixel, traité séparément)
+            case 13: bpp = 0   // ETC1A4 (1 byte/pixel, traité séparément)
+            default: bpp = 0
+            }
 
-            guard width > 0, height > 0, dataAbsOff > 0, dataAbsOff < b.count else { continue }
-
-            let pixEnd = dataSize > 0 ? min(dataAbsOff + dataSize, b.count) : b.count
-            let pixData = Data(b[dataAbsOff..<pixEnd])
-
-            let fmt = fmtWord & 0xFF
-            // Détecter format : ETC1 (0xC=12), ETC1A4 (0xD=13) ; sinon heuristique taille
-            let guessETC1A4 = (dataSize > 0 && dataSize == width * height)
-            let guessETC1   = (dataSize > 0 && dataSize == width * height / 2)
-            let hasAlpha    = (fmt == 13) || (guessETC1A4 && !guessETC1)
-
-            if fmt == 12 || fmt == 13 || fmt == 0 || guessETC1 || guessETC1A4 {
-                results[ti] = ETC1Decoder.decode(data: pixData, width: width, height: height,
-                                                  hasAlpha: hasAlpha)
+            switch fmt {
+            case 0, 1, 5, 7:   // RGBA8, RGB888, IA8, L8 — swizzle Z-order 8×8
+                let sz = width * height * bpp
+                guard sz > 0, dataAddr + sz <= b.count else { continue }
+                results[ti] = decodePICATiled(
+                    data: Data(b[dataAddr..<(dataAddr + sz)]),
+                    width: width, height: height, fmt: fmt)
                 if results[ti] != nil {
-                    print("[BCH TEX EXT \(ti)] ✓ ETC1\(hasAlpha ? "A4" : "") \(width)×\(height)")
+                    let fmtName = fmt == 0 ? "RGBA8" : fmt == 1 ? "RGB888" : fmt == 5 ? "IA8" : "L8"
+                    print("[BCH TEX \(ti)] ✓ \(fmtName) \(width)×\(height)")
                 }
-            } else {
-                print("[BCH TEX EXT \(ti)] format inconnu \(fmt) — ignoré")
+
+            case 12:  // ETC1 : 0.5 octet/pixel (blocs 4×4 8 bytes)
+                let sz = (width * height) / 2
+                guard dataAddr + sz <= b.count else { continue }
+                results[ti] = ETC1Decoder.decode(
+                    data: Data(b[dataAddr..<(dataAddr + sz)]),
+                    width: width, height: height, hasAlpha: false)
+                if results[ti] != nil { print("[BCH TEX \(ti)] ✓ ETC1 \(width)×\(height)") }
+
+            case 13:  // ETC1A4 : 1 octet/pixel (blocs 4×4 16 bytes)
+                let sz = width * height
+                guard dataAddr + sz <= b.count else { continue }
+                results[ti] = ETC1Decoder.decode(
+                    data: Data(b[dataAddr..<(dataAddr + sz)]),
+                    width: width, height: height, hasAlpha: true)
+                if results[ti] != nil { print("[BCH TEX \(ti)] ✓ ETC1A4 \(width)×\(height)") }
+
+            default:
+                print("[BCH TEX \(ti)] format PICA \(fmt) non supporté")
             }
         }
         return results
+    }
+
+    /// Vérifie rapidement si un fichier PT/BCH contient des textures couleur (RGB/RGBA/IA8).
+    /// Utilisé pour prioriser les conteneurs PT couleur sur les conteneurs L8 gris.
+    static func hasColorTextures(in fileData: Data) -> Bool {
+        let bchStart = findBCHStart(in: fileData)
+        guard bchStart >= 0 else { return false }
+        let b = Array(fileData[bchStart...])
+        guard b.count > 0x48, b[0] == 0x42, b[1] == 0x43, b[2] == 0x48 else { return false }
+        let bc = b[4]
+        let mainHdrOff = ru32(b, 8)
+        let gpuCmdOff  = ru32(b, 16)
+        let dataOff    = ru32(b, 20)
+        var p2 = 24; var dataExtOff2: UInt32 = 0
+        if bc > 0x20 { dataExtOff2 = ru32(b, p2); p2 += 4 }
+        let relTblOff = ru32(b, p2); p2 += 4; p2 += 16; if bc > 0x20 { p2 += 4 }
+        let relTblLen = ru32(b, p2)
+        var bMut = b
+        applyRelocation(&bMut, relTblOff: relTblOff, relTblLen: relTblLen, bc: bc,
+                        mainHdrOff: mainHdrOff, strTblOff: ru32(b, 12),
+                        gpuCmdOff: gpuCmdOff, dataOff: dataOff, dataExtOff: dataExtOff2)
+        let texPtrOff = Int(ru32(bMut, Int(mainHdrOff) + 36))
+        let texCount  = Int(ru32(bMut, Int(mainHdrOff) + 40))
+        guard texPtrOff > 0, texCount > 0 else { return false }
+        for ti in 0..<texCount {
+            let tsOff = Int(ru32(bMut, texPtrOff + ti * 4))
+            guard tsOff > 0, tsOff + 8 <= bMut.count else { continue }
+            let cmdBufPtr = Int(ru32(bMut, tsOff))
+            guard cmdBufPtr > 0, cmdBufPtr + 8 <= bMut.count else { continue }
+            var off2 = cmdBufPtr
+            while off2 + 8 <= min(cmdBufPtr + 96, bMut.count) {
+                let reg = Int(ru32(bMut, off2 + 4) & 0xFFFF)
+                if reg == 0x8E {
+                    let fmt = Int(ru32(bMut, off2) & 0xF)
+                    if fmt == 0 || fmt == 1 || fmt == 5 { return true }  // RGB/RGBA/IA8
+                    break
+                }
+                off2 += 8
+            }
+        }
+        return false
+    }
+
+    /// Décode un buffer de pixels PICA200 stocké en tuiles Z-order 8×8 pixels.
+    /// Supporte RGBA8 (fmt=0), RGB888 (fmt=1), IA8 (fmt=5), L8 (fmt=7).
+    /// L'axe Y est inversé (convention OpenGL → top-down pour CGImage).
+    private static func decodePICATiled(data: Data, width: Int, height: Int, fmt: Int) -> CGImage? {
+        guard width > 0, height > 0, width % 8 == 0, height % 8 == 0 else { return nil }
+        let bpp = fmt == 0 ? 4 : fmt == 1 ? 3 : fmt == 5 ? 2 : 1  // bytes per pixel
+        let tilesX = width  / 8
+        let tilesY = height / 8
+        let hasAlpha = (fmt == 0 || fmt == 5)
+        var rgba = [UInt8](repeating: 255, count: width * height * 4)
+
+        for ty in 0..<tilesY {
+            let imgTileY = tilesY - 1 - ty   // inversion Y (OpenGL → top-down)
+            for tx in 0..<tilesX {
+                let tileBase = (ty * tilesX + tx) * 64 * bpp
+                for p in 0..<64 {
+                    let srcIdx = tileBase + p * bpp
+                    guard srcIdx + bpp <= data.count else { break }
+                    let lx = (p & 1) | ((p >> 1) & 2) | ((p >> 2) & 4)
+                    let ly = ((p >> 1) & 1) | ((p >> 2) & 2) | ((p >> 3) & 4)
+                    let imgX = tx * 8 + lx
+                    let imgY = imgTileY * 8 + ly
+                    guard imgX < width, imgY < height else { continue }
+                    let dstIdx = (imgY * width + imgX) * 4
+                    switch fmt {
+                    case 0:   // RGBA8 : mémoire PICA200 = A,B,G,R (little-endian 32-bit → byte order ABGR)
+                        rgba[dstIdx]   = data[srcIdx+3]   // R
+                        rgba[dstIdx+1] = data[srcIdx+2]   // G
+                        rgba[dstIdx+2] = data[srcIdx+1]   // B
+                        rgba[dstIdx+3] = data[srcIdx]     // A
+                    case 1:   // RGB888 : mémoire PICA200 = B,G,R (ordre BGR, pas RGB)
+                        rgba[dstIdx]   = data[srcIdx+2]   // R
+                        rgba[dstIdx+1] = data[srcIdx+1]   // G
+                        rgba[dstIdx+2] = data[srcIdx]     // B
+                        rgba[dstIdx+3] = 255
+                    case 5:   // IA8 : byte 0 = Alpha, byte 1 = Intensity (PICA200 IA8)
+                        let a = data[srcIdx], i = data[srcIdx+1]
+                        rgba[dstIdx] = i; rgba[dstIdx+1] = i; rgba[dstIdx+2] = i; rgba[dstIdx+3] = a
+                    default:  // L8
+                        let v = data[srcIdx]
+                        rgba[dstIdx] = v; rgba[dstIdx+1] = v; rgba[dstIdx+2] = v; rgba[dstIdx+3] = 255
+                    }
+                }
+            }
+        }
+
+        let cs  = CGColorSpaceCreateDeviceRGB()
+        let info = CGBitmapInfo(rawValue: hasAlpha
+            ? CGImageAlphaInfo.premultipliedLast.rawValue
+            : CGImageAlphaInfo.noneSkipLast.rawValue)
+        guard let provider = CGDataProvider(data: Data(rgba) as CFData) else { return nil }
+        return CGImage(width: width, height: height,
+                       bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: width * 4,
+                       space: cs, bitmapInfo: info, provider: provider,
+                       decode: nil, shouldInterpolate: true, intent: .defaultIntent)
     }
 
     /// Cherche le premier offset d'un magic BCH ("BCH\0") dans un Data.

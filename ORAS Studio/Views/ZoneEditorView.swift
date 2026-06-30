@@ -854,11 +854,14 @@ struct ZoneEditorView: View {
                         return m
                     }
 
-                    // ── Textures ETC1 : scan des conteneurs PT de la même zone ──
-                    // La géométrie BCH (PC k=4) n'embarque pas de textures ; elles sont
-                    // dans des fichiers PT séparés (k=0 est le plus grand, meilleure résolution).
-                    var externalTextures: [CGImage?] = []
-                    var bestPTSize = 0
+                    // ── Textures : scan des conteneurs PT de la même zone ──
+                    // Stratégie : 2 passes.
+                    // Passe 1 — chercher un PT avec des textures COULEUR (RGB888/RGBA8/IA8).
+                    // Passe 2 — si aucune couleur, utiliser le plus gros PT (L8 gris haute-res).
+                    var colorTextures: [CGImage?] = []      // PT couleur (k=6 ou k=7 typiquement)
+                    var fallbackTextures: [CGImage?] = []   // PT L8 gris (k=0)
+                    var fallbackSize = 0
+
                     for ptK in 0..<15 {
                         let ptIdx = base008 + ptK
                         let ptRaw = await Task.detached(priority: .userInitiated) {
@@ -866,30 +869,65 @@ struct ZoneEditorView: View {
                         }.value
                         guard ptRaw.count > 0 else { continue }
                         let ptDec = LZ11Decompressor.decompressIfNeeded(ptRaw)
-                        // PT magic : 0x50 0x54
                         guard ptDec.count >= 16,
                               ptDec[0] == 0x50, ptDec[1] == 0x54 else { continue }
-                        // Garder le PT avec le plus de données (résolution maximale)
-                        guard ptDec.count > bestPTSize else { continue }
-                        let textures = await Task.detached(priority: .userInitiated) {
-                            BCHParser.extractTextures(from: ptDec)
+
+                        // Vérifier si ce PT contient des textures couleur (avant décodage complet)
+                        let isColor = await Task.detached(priority: .userInitiated) {
+                            BCHParser.hasColorTextures(in: ptDec)
                         }.value
-                        if !textures.isEmpty {
-                            externalTextures = textures
-                            bestPTSize = ptDec.count
-                            print("[TERRAIN] PT k=\(ptK)[\(ptIdx)] → \(textures.count) textures (\(ptDec.count) B)")
+
+                        if isColor && colorTextures.isEmpty {
+                            // Passe 1 : premier PT couleur trouvé
+                            let textures = await Task.detached(priority: .userInitiated) {
+                                BCHParser.extractTextures(from: ptDec)
+                            }.value
+                            let nonNil = textures.filter { $0 != nil }.count
+                            if nonNil > 0 {
+                                colorTextures = textures
+                                print("[TERRAIN] PT couleur k=\(ptK)[\(ptIdx)] → \(nonNil)/\(textures.count) tex (\(ptDec.count) B)")
+                            }
+                        } else if !isColor && ptDec.count > fallbackSize {
+                            // Passe 2 : PT L8 haute résolution (le plus gros)
+                            let textures = await Task.detached(priority: .userInitiated) {
+                                BCHParser.extractTextures(from: ptDec)
+                            }.value
+                            let nonNil = textures.filter { $0 != nil }.count
+                            if nonNil > 0 {
+                                fallbackTextures = textures
+                                fallbackSize = ptDec.count
+                                print("[TERRAIN] PT L8 k=\(ptK)[\(ptIdx)] → \(nonNil)/\(textures.count) tex (\(ptDec.count) B)")
+                            }
                         }
                     }
-                    // Appliquer les textures PT aux meshes normalisés
+
+                    // Priorité : couleur > gris haute-res
+                    let externalTextures = colorTextures.isEmpty ? fallbackTextures : colorTextures
+                    // Appliquer les textures aux meshes normalisés
+                    // Stratégie : on applique la texture NON-NULLE la plus grande (max pixels)
+                    // plutôt qu'un modulo aveugle, pour éviter TEX[0] vide/minuscule.
                     if !externalTextures.isEmpty {
-                        normalised = normalised.map { mesh in
-                            var m = mesh
-                            let ti = Int(mesh.materialIndex) % externalTextures.count
-                            m.texture = externalTextures[ti]
-                            return m
+                        let bestTex = externalTextures.compactMap { $0 }
+                            .max(by: { ($0.width * $0.height) < ($1.width * $1.height) })
+                        let nonNilCount = externalTextures.compactMap { $0 }.count
+                        if let best = bestTex {
+                            print("[TERRAIN] meilleure tex: \(best.width)×\(best.height) parmi \(nonNilCount) non-nil")
+                            normalised = normalised.map { mesh in
+                                var m = mesh
+                                m.texture = best
+                                return m
+                            }
+                        } else {
+                            normalised = normalised.map { mesh in
+                                var m = mesh
+                                let ti = Int(mesh.materialIndex) % externalTextures.count
+                                m.texture = externalTextures[ti]
+                                return m
+                            }
                         }
                         let withTex = normalised.filter { $0.texture != nil }.count
-                        print("[TERRAIN] ✓ \(withTex)/\(normalised.count) meshes texturés (PT ext.)")
+                        let src = colorTextures.isEmpty ? "L8" : "couleur"
+                        print("[TERRAIN] ✓ \(withTex)/\(normalised.count) meshes texturés (\(src))")
                     }
                     bchMeshes = normalised
                     return

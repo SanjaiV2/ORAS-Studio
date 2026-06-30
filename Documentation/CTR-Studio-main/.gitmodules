@@ -1,0 +1,21 @@
+[submodule "SPICA"]
+	path = SPICA
+	url = https://github.com/KillzXGaming/SPICA
+	branch = master
+[submodule "MapStudio.UI"]
+	path = MapStudio.UI
+	url = https://github.com/MapStudioProject/MapStudio.UI
+	branch = ctr-studio
+[submodule "GLFrameworkEngine"]
+	path = GLFrameworkEngine
+	url = https://github.com/MapStudioProject/GLFrameworkEngine
+[submodule "Toolbox.Core"]
+	path = Toolbox.Core
+	url = https://github.com/KillzXGaming/Toolbox.Core
+	branch = map-studio
+[submodule "Plugins/CtrLibrary"]
+	path = Plugins/CtrLibrary
+	url = https://github.com/MapStudioProject/CtrLibrary.git
+[submodule "IONET"]
+	path = IONET
+	url = https://github.com/KillzXGaming/IONET.git
