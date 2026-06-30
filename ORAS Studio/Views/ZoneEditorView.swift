@@ -841,7 +841,7 @@ struct ZoneEditorView: View {
                     let autoScale: Float = (halfExtX > 0 && collision.width > 0)
                         ? tileHalfW / halfExtX : 1.0
                     print("[TERRAIN] autoScale=\(autoScale) (tileW=\(collision.width) bcbhXHalf=\(halfExtX))")
-                    let normalised = meshes.map { mesh -> BCHParser.MeshData in
+                    var normalised = meshes.map { mesh -> BCHParser.MeshData in
                         var m = mesh
                         m.vertices = mesh.vertices.map { v in
                             var vd = v
@@ -852,6 +852,44 @@ struct ZoneEditorView: View {
                             return vd
                         }
                         return m
+                    }
+
+                    // ── Textures ETC1 : scan des conteneurs PT de la même zone ──
+                    // La géométrie BCH (PC k=4) n'embarque pas de textures ; elles sont
+                    // dans des fichiers PT séparés (k=0 est le plus grand, meilleure résolution).
+                    var externalTextures: [CGImage?] = []
+                    var bestPTSize = 0
+                    for ptK in 0..<15 {
+                        let ptIdx = base008 + ptK
+                        let ptRaw = await Task.detached(priority: .userInitiated) {
+                            GARCFile.readEntry(ptIdx, from: garc008URL) ?? Data()
+                        }.value
+                        guard ptRaw.count > 0 else { continue }
+                        let ptDec = LZ11Decompressor.decompressIfNeeded(ptRaw)
+                        // PT magic : 0x50 0x54
+                        guard ptDec.count >= 16,
+                              ptDec[0] == 0x50, ptDec[1] == 0x54 else { continue }
+                        // Garder le PT avec le plus de données (résolution maximale)
+                        guard ptDec.count > bestPTSize else { continue }
+                        let textures = await Task.detached(priority: .userInitiated) {
+                            BCHParser.extractTextures(from: ptDec)
+                        }.value
+                        if !textures.isEmpty {
+                            externalTextures = textures
+                            bestPTSize = ptDec.count
+                            print("[TERRAIN] PT k=\(ptK)[\(ptIdx)] → \(textures.count) textures (\(ptDec.count) B)")
+                        }
+                    }
+                    // Appliquer les textures PT aux meshes normalisés
+                    if !externalTextures.isEmpty {
+                        normalised = normalised.map { mesh in
+                            var m = mesh
+                            let ti = Int(mesh.materialIndex) % externalTextures.count
+                            m.texture = externalTextures[ti]
+                            return m
+                        }
+                        let withTex = normalised.filter { $0.texture != nil }.count
+                        print("[TERRAIN] ✓ \(withTex)/\(normalised.count) meshes texturés (PT ext.)")
                     }
                     bchMeshes = normalised
                     return

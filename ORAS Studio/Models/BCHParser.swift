@@ -98,6 +98,103 @@ struct BCHParser {
         return result
     }
 
+    // MARK: — extractTextures : lit uniquement les textures d'un BCH (typiquement un conteneur PT)
+
+    /// Extrait et décode les textures ETC1/ETC1A4 d'un fichier BCH (sans parser la géométrie).
+    /// Le BCH peut être le contenu brut OU être encapsulé dans un conteneur PT (cherche la magic BCH).
+    /// Retourne un tableau [CGImage?] indexé par position dans la liste de textures BCH.
+    static func extractTextures(from fileData: Data) -> [CGImage?] {
+        // Trouver le début du BCH dans le buffer (peut être précédé d'un header PT, PB, PK…)
+        let bchStart = findBCHStart(in: fileData)
+        guard bchStart >= 0 else {
+            print("[BCH TEX] aucun magic BCH trouvé dans le fichier \(fileData.count) B")
+            return []
+        }
+        var b = Array(fileData[bchStart...])
+        guard b.count > 0x48,
+              b[0] == 0x42, b[1] == 0x43, b[2] == 0x48 else { return [] }
+
+        let bc         = b[4]
+        let mainHdrOff = ru32(b, 8)
+        let strTblOff  = ru32(b, 12)
+        let gpuCmdOff  = ru32(b, 16)
+        let dataOff    = ru32(b, 20)
+        var p = 24
+        var dataExtOff: UInt32 = 0
+        if bc > 0x20 { dataExtOff = ru32(b, p); p += 4 }
+        let relTblOff = ru32(b, p); p += 4
+        p += 16; if bc > 0x20 { p += 4 }
+        let relTblLen = ru32(b, p)
+
+        applyRelocation(&b, relTblOff: relTblOff, relTblLen: relTblLen, bc: bc,
+                        mainHdrOff: mainHdrOff, strTblOff: strTblOff,
+                        gpuCmdOff: gpuCmdOff, dataOff: dataOff, dataExtOff: dataExtOff)
+
+        let texPtrTableOff = Int(ru32(b, Int(mainHdrOff) + 36))
+        let texCount       = Int(ru32(b, Int(mainHdrOff) + 40))
+        print("[BCH TEX EXT] bchStart=0x\(String(bchStart,radix:16)) texPtrOff=0x\(String(texPtrTableOff,radix:16)) texCount=\(texCount)")
+
+        guard texPtrTableOff > 0, texCount > 0,
+              texPtrTableOff + texCount * 4 <= b.count else { return [] }
+
+        var results: [CGImage?] = Array(repeating: nil, count: texCount)
+        for ti in 0..<texCount {
+            let tsOff = Int(ru32(b, texPtrTableOff + ti * 4))
+            guard tsOff > 0, tsOff + 0x24 <= b.count else { continue }
+
+            // Dump hex brut du struct (0x30 premiers bytes) pour diagnostiquer le layout
+            if ti == 0 {
+                let end = min(tsOff + 0x30, b.count)
+                let hexBytes = b[tsOff..<end].map { String(format: "%02x", $0) }.joined(separator: " ")
+                print("[BCH TEX STRUCT0 RAW @0x\(String(tsOff,radix:16))] \(hexBytes)")
+            }
+
+            let dataAbsOff = Int(ru32(b, tsOff + 0x00))
+            let fmtWord    = Int(ru32(b, tsOff + 0x0C))
+            let dataSize   = Int(ru32(b, tsOff + 0x10))
+            let height     = Int(ru16(b, tsOff + 0x18))
+            let width      = Int(ru16(b, tsOff + 0x1A))
+            let nameAbsOff = Int(ru32(b, tsOff + 0x20))
+            let name = readCString(b, at: nameAbsOff)
+
+            print("[BCH TEX EXT \(ti)] struct=0x\(String(tsOff,radix:16))"
+                + " data=0x\(String(dataAbsOff,radix:16))"
+                + " fmt=\(fmtWord) sz=\(dataSize) \(width)×\(height) name='\(name)'")
+
+            guard width > 0, height > 0, dataAbsOff > 0, dataAbsOff < b.count else { continue }
+
+            let pixEnd = dataSize > 0 ? min(dataAbsOff + dataSize, b.count) : b.count
+            let pixData = Data(b[dataAbsOff..<pixEnd])
+
+            let fmt = fmtWord & 0xFF
+            // Détecter format : ETC1 (0xC=12), ETC1A4 (0xD=13) ; sinon heuristique taille
+            let guessETC1A4 = (dataSize > 0 && dataSize == width * height)
+            let guessETC1   = (dataSize > 0 && dataSize == width * height / 2)
+            let hasAlpha    = (fmt == 13) || (guessETC1A4 && !guessETC1)
+
+            if fmt == 12 || fmt == 13 || fmt == 0 || guessETC1 || guessETC1A4 {
+                results[ti] = ETC1Decoder.decode(data: pixData, width: width, height: height,
+                                                  hasAlpha: hasAlpha)
+                if results[ti] != nil {
+                    print("[BCH TEX EXT \(ti)] ✓ ETC1\(hasAlpha ? "A4" : "") \(width)×\(height)")
+                }
+            } else {
+                print("[BCH TEX EXT \(ti)] format inconnu \(fmt) — ignoré")
+            }
+        }
+        return results
+    }
+
+    /// Cherche le premier offset d'un magic BCH ("BCH\0") dans un Data.
+    /// Permet de trouver le BCH à l'intérieur d'un conteneur PT/PB/PK.
+    static func findBCHStart(in data: Data) -> Int {
+        // Recherche rapide de la séquence 0x42 0x43 0x48
+        for i in 0..<(data.count - 4) {
+            if data[i] == 0x42, data[i+1] == 0x43, data[i+2] == 0x48 { return i }
+        }
+        return -1
+    }
+
     // MARK: — parseWithTextures : variante de parse() qui extrait aussi les textures ETC1
 
     /// Comme parse(), mais charge et décode les textures ETC1/ETC1A4 embarquées dans le BCH,
@@ -151,11 +248,14 @@ struct BCHParser {
                         gpuCmdOff: gpuCmdOff, dataOff: dataOff, dataExtOff: dataExtOff)
 
         // ── Extraction des textures ──
-        // Main header layout (bc=0x21) :
+        // Main header layout réel (bc=0x21, vérifié sur données ORAS) :
         //   +0  modelsPointerOffset, +4 modelsCount
-        //   +60 texturesPointerOffset, +64 texturesCount
-        let texPtrTableOff = Int(ru32(b, Int(mainHdrOff) + 60))
-        let texCount       = Int(ru32(b, Int(mainHdrOff) + 64))
+        //   +36 (0x24) texturesPointerOffset   ← PAS +60 comme dans Ohana3DS docs
+        //   +40 (0x28) texturesCount
+        //   Les textures sont souvent dans un BCH séparé (conteneur PT),
+        //   pas dans le BCH géométrie (conteneur PC).
+        let texPtrTableOff = Int(ru32(b, Int(mainHdrOff) + 36))
+        let texCount       = Int(ru32(b, Int(mainHdrOff) + 40))
         print("[BCH TEX] texPtrTableOff=0x\(String(texPtrTableOff, radix:16)) texCount=\(texCount)")
 
         // Tableau indexé par position dans la liste (0..texCount-1)

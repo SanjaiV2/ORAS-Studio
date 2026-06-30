@@ -158,6 +158,55 @@ struct GARCFile {
         guard let raw = rawData(entry: entry, sub: sub) else { return nil }
         return LZ11Decompressor.decompressIfNeeded(raw)
     }
+
+    // MARK: — Lecture lazy (sans charger le fichier entier)
+
+    /// Lit une seule entrée d'un grand GARC en accédant directement au disque via FileHandle.
+    /// Évite de charger l'intégralité du fichier en mémoire (indispensable pour a/0/0/8 ≈ 1 GB).
+    ///
+    /// Complexité : O(N) lectures séquentielles sur le FATB jusqu'à l'entrée N,
+    /// puis une lecture aléatoire dans la section FIMB. Pour N=1800, cela représente
+    /// ~28 KB de lecture sur le FATB — typiquement < 2 ms.
+    static func readEntry(_ entryIndex: Int, subBit: Int = 0, from url: URL) -> Data? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+
+        // ── En-tête GARC (24 bytes minimum) ──
+        guard let h = try? handle.read(upToCount: 24), h.count == 24 else { return nil }
+        guard h[0] == 0x43, h[1] == 0x52, h[2] == 0x41, h[3] == 0x47 else { return nil } // "CRAG"
+        let headerSize = Int(h.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 4, as: UInt32.self) })
+        let dataOffset = Int(h.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 16, as: UInt32.self) })
+
+        // ── Chunk FATO ──
+        guard (try? handle.seek(toOffset: UInt64(headerSize))) != nil else { return nil }
+        guard let fato = try? handle.read(upToCount: 12), fato.count == 12 else { return nil }
+        guard fato[0] == 0x4F, fato[1] == 0x54, fato[2] == 0x41, fato[3] == 0x46 else { return nil } // "OTAF"
+        let fatoSize   = Int(fato.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 4, as: UInt32.self) })
+        let entryCount = Int(fato.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 8, as: UInt16.self) })
+        guard entryIndex < entryCount else { return nil }
+
+        // ── Chunk FATB : skip magic(4) + fatbSize(4) + fileCount(4) ──
+        let fatbDataStart = headerSize + fatoSize + 12
+        guard (try? handle.seek(toOffset: UInt64(fatbDataStart))) != nil else { return nil }
+
+        // Scan séquentiel des entrées FATB jusqu'à entryIndex
+        for i in 0...entryIndex {
+            guard let vecBytes = try? handle.read(upToCount: 4), vecBytes.count == 4 else { return nil }
+            let vec = vecBytes.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 0, as: UInt32.self) }
+            for bit in 0..<32 {
+                guard (vec >> bit) & 1 != 0 else { continue }
+                guard let sub12 = try? handle.read(upToCount: 12), sub12.count == 12 else { return nil }
+                if i == entryIndex && bit == subBit {
+                    let s = Int(sub12.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 0, as: UInt32.self) })
+                    let l = Int(sub12.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 8, as: UInt32.self) })
+                    guard l > 0 else { return nil }
+                    guard (try? handle.seek(toOffset: UInt64(dataOffset + s))) != nil else { return nil }
+                    return try? handle.read(upToCount: l)
+                }
+            }
+        }
+        return nil
+    }
 }
 
 // MARK: — Entrée GARC
