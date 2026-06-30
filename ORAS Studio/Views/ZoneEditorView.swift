@@ -774,9 +774,10 @@ struct ZoneEditorView: View {
             print("[TERRAIN] a/0/3/9 introuvable"); return
         }
 
-        // Lire le fichier GR brut (non-compressé, déjà décompressé dans le GARC)
+        // Lire le fichier GR — les GR sont LZ11-compressés dans le GARC
         let rawGR = await Task.detached(priority: .userInitiated) {
-            GARCFile.readEntry(grEntry, from: garc039URL) ?? Data()
+            let raw = GARCFile.readEntry(grEntry, from: garc039URL) ?? Data()
+            return LZ11Decompressor.decompressIfNeeded(raw)
         }.value
 
         guard rawGR.count > 0x1A10,
