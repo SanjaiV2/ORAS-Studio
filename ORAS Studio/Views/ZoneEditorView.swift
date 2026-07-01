@@ -828,21 +828,15 @@ struct ZoneEditorView: View {
             print("[TERRAIN] aucun mesh extrait de GR[\(grEntry)]"); return
         }
 
-        // Charger les textures depuis le BCH séparé a/0/3/2[grEntry].
-        // Le BCH géométrie (a/0/3/9) ne contient aucune texture embarquée : les
-        // textures « bakées » du terrain vivent dans a/0/3/2 au même index GR.
-        let garc032URL = project.romfsURL.appending(path: "a/0/3/2")
-        let textures: [BCHParser.TextureInfo] = await Task.detached(priority: .userInitiated) {
-            guard FileManager.default.fileExists(atPath: garc032URL.path(percentEncoded: false)),
-                  let raw = GARCFile.readEntry(grEntry, from: garc032URL) else { return [] }
-            return BCHParser.parseTextureBCH(fileData: LZ11Decompressor.decompressIfNeeded(raw))
-        }.value
-
-        // Texture primaire = plus grande texture opaque (surface principale du terrain).
-        let primaryTex = textures.filter { $0.isOpaque }
-                                 .max(by: { $0.byteSize < $1.byteSize })?.image
-            ?? textures.max(by: { $0.byteSize < $1.byteSize })?.image
-        print("[TERRAIN] textures a/0/3/2[\(grEntry)] → \(textures.count), primaire=\(primaryTex != nil)")
+        // NOTE textures : a/0/3/2[grEntry] n'est PAS la source des textures du terrain
+        // (ce sont des modèles de props sans rapport → rendu incorrect). Les vraies
+        // textures du terrain extérieur vivent dans les fichiers « AD » de a/0/1/4
+        // (index = ZO sec0+0x02) et sont référencées par nom via les coordinateurs
+        // de texture des matériaux. Tant que ce pipeline (coordinateurs + splatting +
+        // source des intérieurs) n'est pas implémenté, on ne plaque aucune texture.
+        // Le décodeur ETC1/PICA (ETC1Decoder, PICATextureDecoder, parseTextureBCH) est
+        // conservé pour cette future implémentation.
+        let primaryTex: CGImage? = nil
 
         // Normaliser les vertices en espace-tuile (même logique qu'avant)
         var mnX: Float = .infinity, mxX: Float = -.infinity
