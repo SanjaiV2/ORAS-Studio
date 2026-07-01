@@ -801,6 +801,9 @@ struct ZoneEditorView: View {
             BCHParser.parse(fileData: bch0Data, isTM: false)
         }.value
         print("[TERRAIN] BCH[0] → \(allMeshes.count) meshes \(allMeshes.reduce(0){$0+$1.vertices.count}) vtx")
+        // Chaque BCH a SA table de matériaux : mémoriser la frontière pour l'assignation.
+        let bch0MeshCount = allMeshes.count
+        var bch1DataOpt: Data? = nil
 
         // BCH[1] optionnel : scanner les slots du header GR (offsets 16..36)
         for slotOff in stride(from: 16, to: 40, by: 4) {
@@ -821,6 +824,7 @@ struct ZoneEditorView: View {
             }.value
             print("[TERRAIN] BCH[1] → \(meshes1.count) meshes \(meshes1.reduce(0){$0+$1.vertices.count}) vtx")
             allMeshes.append(contentsOf: meshes1)
+            bch1DataOpt = bch1Data
             break
         }
 
@@ -828,15 +832,49 @@ struct ZoneEditorView: View {
             print("[TERRAIN] aucun mesh extrait de GR[\(grEntry)]"); return
         }
 
-        // NOTE textures : a/0/3/2[grEntry] n'est PAS la source des textures du terrain
-        // (ce sont des modèles de props sans rapport → rendu incorrect). Les vraies
-        // textures du terrain extérieur vivent dans les fichiers « AD » de a/0/1/4
-        // (index = ZO sec0+0x02) et sont référencées par nom via les coordinateurs
-        // de texture des matériaux. Tant que ce pipeline (coordinateurs + splatting +
-        // source des intérieurs) n'est pas implémenté, on ne plaque aucune texture.
-        // Le décodeur ETC1/PICA (ETC1Decoder, PICATextureDecoder, parseTextureBCH) est
-        // conservé pour cette future implémentation.
-        let primaryTex: CGImage? = nil
+        // ── Pipeline textures ──
+        // 1. Matériaux du BCH géométrie → nom de texture0 par materialIndex.
+        // 2. Fichier AD de l'aire (a/0/1/4[ZoneADMapping]) → textures nommées.
+        // 3. Association par nom : mesh.materialIndex → texture0 → CGImage.
+        let materials = await Task.detached(priority: .userInitiated) {
+            BCHParser.parseMaterials(fileData: bch0Data)
+        }.value
+        let materials1: [BCHParser.MaterialInfo] = await Task.detached(priority: .userInitiated) {
+            guard let d = bch1DataOpt else { return [] }
+            return BCHParser.parseMaterials(fileData: d)
+        }.value
+
+        var textureByName: [String: CGImage] = [:]
+        if let adIdx = ZoneADMapping.adIndex(forZone: zoneID) {
+            let garc014URL = project.romfsURL.appending(path: "a/0/1/4")
+            textureByName = await Task.detached(priority: .userInitiated) {
+                guard FileManager.default.fileExists(atPath: garc014URL.path(percentEncoded: false)),
+                      let rawAD = GARCFile.readEntry(adIdx, from: garc014URL) else { return [:] }
+                let ad = LZ11Decompressor.decompressIfNeeded(rawAD)
+                var dict: [String: CGImage] = [:]
+                for section in ADParser.extractBCHSections(from: ad) {
+                    for tex in BCHParser.parseTextureBCH(fileData: section)
+                    where !tex.name.isEmpty && dict[tex.name] == nil {
+                        dict[tex.name] = tex.image
+                    }
+                }
+                return dict
+            }.value
+            print("[TERRAIN] AD[\(adIdx)] → \(textureByName.count) textures nommées")
+        } else {
+            print("[TERRAIN] zone \(zoneID) absente de ZoneADMapping")
+        }
+
+        let matched = materials.filter { textureByName[$0.texture0] != nil }.count
+        print("[TERRAIN] matériaux=\(materials.count), texturés=\(matched)")
+
+        func textureFor(meshIndex: Int, materialIndex: UInt16) -> CGImage? {
+            let table = meshIndex < bch0MeshCount ? materials : materials1
+            let mi = Int(materialIndex)
+            guard mi < table.count else { return nil }
+            return textureByName[table[mi].texture0]
+                ?? textureByName[table[mi].texture1]
+        }
 
         // Normaliser les vertices en espace-tuile (même logique qu'avant)
         var mnX: Float = .infinity, mxX: Float = -.infinity
@@ -855,10 +893,11 @@ struct ZoneEditorView: View {
             ? tileHalfW / halfExtX : 1.0
         print("[TERRAIN] autoScale=\(autoScale)")
 
-        bchMeshes = allMeshes.map { mesh in
+        bchMeshes = allMeshes.enumerated().map { (idx, mesh) in
             var m = mesh
-            // Appliquer la texture primaire aux meshes sans texture embarquée.
-            if m.texture == nil { m.texture = primaryTex }
+            if m.texture == nil {
+                m.texture = textureFor(meshIndex: idx, materialIndex: m.materialIndex)
+            }
             m.vertices = mesh.vertices.map { v in
                 var vd = v
                 vd.position = SIMD3(

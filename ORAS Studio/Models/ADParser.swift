@@ -1,50 +1,40 @@
 import Foundation
 
-// Parses the "AD\x0c\0" zone terrain format stored in GARC a/0/1/4.
-// Each entry is an LZ11-compressed package containing:
-//   - Header (bytes 0..firstOffset): magic + table of u32 section offsets
-//   - Metadata section (~256 bytes)
-//   - One or more embedded BCH terrain meshes
-//   - Float tables, camera data, and other auxiliary sections
+// Parse les fichiers « AD » (magic "AD\x0c\0") du GARC a/0/1/4.
+// Un AD = une AIRE du monde (partagée par plusieurs zones) contenant :
+//   - un header avec table d'offsets de sections
+//   - plusieurs sections BCH embarquées (modèles + TEXTURES de l'aire)
+//   - tables auxiliaires (caméra, floats…)
+// C'est LA source des textures du terrain (voir ZoneADMapping pour zone → AD).
 struct ADParser {
 
-    // Returns all BCH Data blobs embedded in the AD file, largest first.
-    // The largest BCH is the main terrain; smaller ones are detail models.
+    /// Retourne toutes les sections BCH embarquées, par scan du magic "BCH\0".
+    /// Chaque section s'étend jusqu'au BCH suivant (ou la fin du fichier) —
+    /// suffisant pour le parsing, qui borne ses lectures via les tailles internes.
     static func extractBCHSections(from data: Data) -> [Data] {
         guard data.count > 8,
               data[0] == 0x41, data[1] == 0x44  // "AD"
         else { return [] }
 
-        // Collect section boundary offsets from the header (bytes 4, 8, 12, …)
-        // The header extends until firstOffset; stop at 0 values or > fileSize.
-        var offsets: [Int] = []
-        var i = 4
-        while i + 4 <= min(data.count, 256) {
-            let off = Int(data.withUnsafeBytes {
-                $0.loadUnaligned(fromByteOffset: i, as: UInt32.self)
-            })
-            if off == 0 { break }
-            offsets.append(off)
-            i += 4
+        let bytes = [UInt8](data)
+        var starts: [Int] = []
+        var i = 0
+        while i + 4 <= bytes.count {
+            if bytes[i] == 0x42, bytes[i+1] == 0x43, bytes[i+2] == 0x48, bytes[i+3] == 0x00 {
+                starts.append(i)
+                i += 4
+            } else {
+                i += 1
+            }
         }
-        guard offsets.count >= 2 else { return [] }
+        guard !starts.isEmpty else { return [] }
 
-        // Enumerate consecutive pairs; pick those whose data starts with BCH magic.
-        var bchSections: [Data] = []
-        for j in 0 ..< offsets.count - 1 {
-            let start = offsets[j]
-            let end   = offsets[j + 1]
-            guard start < end, end <= data.count, end - start > 8 else { continue }
-            // BCH magic: "BCH\0"
-            guard data[start]   == 0x42,
-                  data[start+1] == 0x43,
-                  data[start+2] == 0x48,
-                  data[start+3] == 0x00
-            else { continue }
-            bchSections.append(data[start ..< end])
+        var sections: [Data] = []
+        for (j, start) in starts.enumerated() {
+            let end = j + 1 < starts.count ? starts[j + 1] : bytes.count
+            guard end - start > 0x44 else { continue }
+            sections.append(Data(bytes[start..<end]))
         }
-
-        // Return largest first so callers can use bchSections[0] as main terrain.
-        return bchSections.sorted { $0.count > $1.count }
+        return sections
     }
 }
