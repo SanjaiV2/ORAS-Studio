@@ -5,7 +5,7 @@ import Foundation
 //   - un header avec table d'offsets de sections
 //   - plusieurs sections BCH embarquées (modèles + TEXTURES de l'aire)
 //   - tables auxiliaires (caméra, floats…)
-// C'est LA source des textures du terrain (voir ZoneADMapping pour zone → AD).
+// C'est LA source des textures du terrain (index = ZoneData+0x02 « MapArea »).
 struct ADParser {
 
     /// Retourne toutes les sections BCH embarquées, par scan du magic "BCH\0".

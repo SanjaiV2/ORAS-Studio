@@ -708,14 +708,15 @@ struct ZoneEditorView: View {
         let rawData = sub.rawData
         struct ZoneResult {
             var bg: ZoneBackground; var markers: [ZoneEntityMarker]; var gridW, gridH: Int
-            var modelEntry: Int  // sec0+0x18 → GR index dans a/0/3/9
+            var mapMatrix: Int   // ZoneData+0x04 → fichier matrix dans a/0/4/0 (grille de GR)
+            var mapArea:   Int   // ZoneData+0x02 → fichier AD dans a/0/1/4 (textures de l'aire)
         }
         let result = await Task.detached(priority: .userInitiated) { () -> ZoneResult in
             let decompressed = LZ11Decompressor.decompressIfNeeded(rawData)
             guard decompressed.count >= 8,
                   decompressed[0] == UInt8(ascii: "Z"),
                   decompressed[1] == UInt8(ascii: "O")
-            else { return ZoneResult(bg: .none, markers: [], gridW: 40, gridH: 30, modelEntry: 0) }
+            else { return ZoneResult(bg: .none, markers: [], gridW: 40, gridH: 30, mapMatrix: 0, mapArea: 0) }
 
             let sectionCount = Int(decompressed.withUnsafeBytes {
                 $0.loadUnaligned(fromByteOffset: 2, as: UInt16.self) })
@@ -723,11 +724,15 @@ struct ZoneEditorView: View {
                 ? Int(decompressed.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: 4, as: UInt32.self) })
                 : 4
 
-            // u16 at sec0+0x18 (byte 24) = terrain GR index dans a/0/3/9
-            var modelEntry = 0
-            if sec0Off + 26 <= decompressed.count {
-                modelEntry = Int(decompressed.withUnsafeBytes {
-                    $0.loadUnaligned(fromByteOffset: sec0Off + 24, as: UInt16.self)
+            // ZoneData (pk3DS) : +0x02 MapArea (AD), +0x04 MapMatrix (a/0/4/0).
+            // (+0x18 est le ScriptFile — PAS le modèle.)
+            var mapMatrix = 0, mapArea = 0
+            if sec0Off + 6 <= decompressed.count {
+                mapArea = Int(decompressed.withUnsafeBytes {
+                    $0.loadUnaligned(fromByteOffset: sec0Off + 2, as: UInt16.self)
+                })
+                mapMatrix = Int(decompressed.withUnsafeBytes {
+                    $0.loadUnaligned(fromByteOffset: sec0Off + 4, as: UInt16.self)
                 })
             }
 
@@ -755,135 +760,141 @@ struct ZoneEditorView: View {
             else                  { bg = .outdoor }
 
             let markers = ZoneEditorView.parseEntityMarkers(from: decompressed, gridW: gridW, gridH: gridH)
-            return ZoneResult(bg: bg, markers: markers, gridW: gridW, gridH: gridH, modelEntry: modelEntry)
+            return ZoneResult(bg: bg, markers: markers, gridW: gridW, gridH: gridH,
+                              mapMatrix: mapMatrix, mapArea: mapArea)
         }.value
 
         background    = result.bg
         entityMarkers = result.markers
         collision     = .defaultMap(width: result.gridW, height: result.gridH)
         collDirty     = false
-        Task { await loadTerrainMeshes(zoneID: id, grEntry: result.modelEntry) }
+        Task { await loadTerrainMeshes(zoneID: id, matrixEntry: result.mapMatrix, areaEntry: result.mapArea) }
     }
 
-    private func loadTerrainMeshes(zoneID: Int, grEntry: Int) async {
+    // Pipeline officiel (structure pk3DS/ZoneData) :
+    //   ZoneData+0x04 (MapMatrix) → a/0/4/0[mm] : mini "MM", grille W×H de u16 = index GR
+    //   ZoneData+0x02 (MapArea)   → a/0/1/4[ad] : fichier AD = textures nommées de l'aire
+    //   Chaque GR (a/0/3/9) = un chunk de 40×40 tuiles (720 unités) placé sur la grille.
+    private func loadTerrainMeshes(zoneID: Int, matrixEntry: Int, areaEntry: Int) async {
         guard let project = controller.project else { return }
-        print("[TERRAIN] zone=\(zoneID) grEntry=\(grEntry) — a/0/3/9")
+        print("[TERRAIN] zone=\(zoneID) matrix=\(matrixEntry) area=\(areaEntry)")
 
+        let garc040URL = project.romfsURL.appending(path: "a/0/4/0")
         let garc039URL = project.romfsURL.appending(path: "a/0/3/9")
-        guard FileManager.default.fileExists(atPath: garc039URL.path(percentEncoded: false)) else {
-            print("[TERRAIN] a/0/3/9 introuvable"); return
+        let garc014URL = project.romfsURL.appending(path: "a/0/1/4")
+        guard FileManager.default.fileExists(atPath: garc039URL.path(percentEncoded: false)),
+              FileManager.default.fileExists(atPath: garc040URL.path(percentEncoded: false)) else {
+            print("[TERRAIN] a/0/3/9 ou a/0/4/0 introuvable"); return
         }
 
-        // Lire le fichier GR — les GR sont LZ11-compressés dans le GARC
-        let rawGR = await Task.detached(priority: .userInitiated) {
-            let raw = GARCFile.readEntry(grEntry, from: garc039URL) ?? Data()
-            return LZ11Decompressor.decompressIfNeeded(raw)
-        }.value
-
-        guard rawGR.count > 0x1A10,
-              rawGR[0] == 0x47, rawGR[1] == 0x52 else {  // 'G','R'
-            print("[TERRAIN] GR[\(grEntry)] invalide (\(rawGR.count) B)"); return
+        struct TerrainResult {
+            var meshes: [BCHParser.MeshData]
+            var texCount: Int
+            var chunkCount: Int
         }
+        let result = await Task.detached(priority: .userInitiated) { () -> TerrainResult in
+            func ru16(_ d: Data, _ o: Int) -> Int {
+                o + 2 <= d.count
+                    ? Int(d.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: o, as: UInt16.self) }) : 0
+            }
+            func ru32(_ d: Data, _ o: Int) -> Int {
+                o + 4 <= d.count
+                    ? Int(d.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: o, as: UInt32.self) }) : 0
+            }
+            // mini conteneur : magic(2) + count(u16) + offsets(u32 × count+1)
+            func parseMini(_ raw: Data, m0: UInt8, m1: UInt8) -> [Data] {
+                guard raw.count > 8, raw[0] == m0, raw[1] == m1 else { return [] }
+                let cnt = ru16(raw, 2)
+                var out: [Data] = []
+                for i in 0..<cnt {
+                    let s = ru32(raw, 4 + i*4), e = ru32(raw, 8 + i*4)
+                    guard s < e, e <= raw.count else { continue }
+                    out.append(raw.subdata(in: s..<e))
+                }
+                return out
+            }
 
-        // GR header : BCH[0] toujours à l'offset 0x1A00 ; fin à GR.u32[3] (byte 12)
-        let BCH0_START = 0x1A00
-        let bch0End = Int(rawGR.withUnsafeBytes {
-            $0.loadUnaligned(fromByteOffset: 12, as: UInt32.self)
-        })
-        guard bch0End > BCH0_START, bch0End <= rawGR.count else {
-            print("[TERRAIN] GR BCH0 range invalide (end=\(bch0End))"); return
-        }
+            // ── Matrix : grille de chunks GR ──
+            guard let rawMM = GARCFile.readEntry(matrixEntry, from: garc040URL) else {
+                return TerrainResult(meshes: [], texCount: 0, chunkCount: 0)
+            }
+            let mmFiles = parseMini(LZ11Decompressor.decompressIfNeeded(rawMM),
+                                    m0: 0x4D, m1: 0x4D)   // "MM"
+            guard let mm0 = mmFiles.first, mm0.count >= 8 else {
+                return TerrainResult(meshes: [], texCount: 0, chunkCount: 0)
+            }
+            let W = ru16(mm0, 4), H = ru16(mm0, 6)
+            var cells: [(gr: Int, gx: Int, gy: Int)] = []
+            if W > 0, H > 0, W * H < 1024 {
+                for i in 0..<(W * H) {
+                    let v = ru16(mm0, 8 + i*2)
+                    if v != 0xFFFF { cells.append((v, i % W, i / W)) }
+                }
+            }
+            guard !cells.isEmpty else {
+                return TerrainResult(meshes: [], texCount: 0, chunkCount: 0)
+            }
 
-        let bch0Data = rawGR.subdata(in: BCH0_START..<bch0End)
-        print("[TERRAIN] GR[\(grEntry)] BCH[0] \(bch0Data.count) B")
-
-        var allMeshes = await Task.detached(priority: .userInitiated) {
-            BCHParser.parse(fileData: bch0Data, isTM: false)
-        }.value
-        print("[TERRAIN] BCH[0] → \(allMeshes.count) meshes \(allMeshes.reduce(0){$0+$1.vertices.count}) vtx")
-        // Chaque BCH a SA table de matériaux : mémoriser la frontière pour l'assignation.
-        let bch0MeshCount = allMeshes.count
-        var bch1DataOpt: Data? = nil
-
-        // BCH[1] optionnel : scanner les slots du header GR (offsets 16..36)
-        for slotOff in stride(from: 16, to: 40, by: 4) {
-            guard slotOff + 4 <= rawGR.count else { break }
-            let off = Int(rawGR.withUnsafeBytes {
-                $0.loadUnaligned(fromByteOffset: slotOff, as: UInt32.self)
-            })
-            guard off > bch0End + 256, off + 3 < rawGR.count else { continue }
-            guard rawGR[off] == 0x42, rawGR[off+1] == 0x43, rawGR[off+2] == 0x48 else { continue }
-            let nextOff = Int(rawGR.withUnsafeBytes {
-                $0.loadUnaligned(fromByteOffset: slotOff + 4, as: UInt32.self)
-            })
-            let bch1End = (nextOff > off && nextOff <= rawGR.count) ? nextOff : rawGR.count
-            let bch1Data = rawGR.subdata(in: off..<bch1End)
-            print("[TERRAIN] GR BCH[1] @0x\(String(off, radix:16)) \(bch1Data.count) B")
-            let meshes1 = await Task.detached(priority: .userInitiated) {
-                BCHParser.parse(fileData: bch1Data, isTM: false)
-            }.value
-            print("[TERRAIN] BCH[1] → \(meshes1.count) meshes \(meshes1.reduce(0){$0+$1.vertices.count}) vtx")
-            allMeshes.append(contentsOf: meshes1)
-            bch1DataOpt = bch1Data
-            break
-        }
-
-        guard !allMeshes.isEmpty else {
-            print("[TERRAIN] aucun mesh extrait de GR[\(grEntry)]"); return
-        }
-
-        // ── Pipeline textures ──
-        // 1. Matériaux du BCH géométrie → nom de texture0 par materialIndex.
-        // 2. Fichier AD de l'aire (a/0/1/4[ZoneADMapping]) → textures nommées.
-        // 3. Association par nom : mesh.materialIndex → texture0 → CGImage.
-        let materials = await Task.detached(priority: .userInitiated) {
-            BCHParser.parseMaterials(fileData: bch0Data)
-        }.value
-        let materials1: [BCHParser.MaterialInfo] = await Task.detached(priority: .userInitiated) {
-            guard let d = bch1DataOpt else { return [] }
-            return BCHParser.parseMaterials(fileData: d)
-        }.value
-
-        var textureByName: [String: CGImage] = [:]
-        if let adIdx = ZoneADMapping.adIndex(forZone: zoneID) {
-            let garc014URL = project.romfsURL.appending(path: "a/0/1/4")
-            textureByName = await Task.detached(priority: .userInitiated) {
-                guard FileManager.default.fileExists(atPath: garc014URL.path(percentEncoded: false)),
-                      let rawAD = GARCFile.readEntry(adIdx, from: garc014URL) else { return [:] }
+            // ── Textures de l'aire (AD) ──
+            var textureByName: [String: CGImage] = [:]
+            if FileManager.default.fileExists(atPath: garc014URL.path(percentEncoded: false)),
+               let rawAD = GARCFile.readEntry(areaEntry, from: garc014URL) {
                 let ad = LZ11Decompressor.decompressIfNeeded(rawAD)
-                var dict: [String: CGImage] = [:]
                 for section in ADParser.extractBCHSections(from: ad) {
                     for tex in BCHParser.parseTextureBCH(fileData: section)
-                    where !tex.name.isEmpty && dict[tex.name] == nil {
-                        dict[tex.name] = tex.image
+                    where !tex.name.isEmpty && textureByName[tex.name] == nil {
+                        textureByName[tex.name] = tex.image
                     }
                 }
-                return dict
-            }.value
-            print("[TERRAIN] AD[\(adIdx)] → \(textureByName.count) textures nommées")
-        } else {
-            print("[TERRAIN] zone \(zoneID) absente de ZoneADMapping")
+            }
+
+            // ── Chunks GR : géométrie + matériaux propres + placement grille ──
+            let step: Float = 720   // 40 tuiles × 18 unités
+            var all: [BCHParser.MeshData] = []
+            for cell in cells {
+                guard let rawGRc = GARCFile.readEntry(cell.gr, from: garc039URL) else { continue }
+                let rawGR = LZ11Decompressor.decompressIfNeeded(rawGRc)
+                guard rawGR.count > 0x1A10,
+                      rawGR[0] == 0x47, rawGR[1] == 0x52 else { continue }
+                let bch0End = ru32(rawGR, 12)
+                guard bch0End > 0x1A00, bch0End <= rawGR.count else { continue }
+                let bch0 = rawGR.subdata(in: 0x1A00..<bch0End)
+
+                var meshes = BCHParser.parse(fileData: bch0, isTM: false)
+                let mats   = BCHParser.parseMaterials(fileData: bch0)
+                let ox = Float(cell.gx) * step
+                let oz = Float(cell.gy) * step
+                for i in 0..<meshes.count {
+                    let mi = Int(meshes[i].materialIndex)
+                    if mi < mats.count {
+                        meshes[i].texture = textureByName[mats[mi].texture0]
+                                         ?? textureByName[mats[mi].texture1]
+                    }
+                    meshes[i].vertices = meshes[i].vertices.map { v in
+                        var vd = v
+                        vd.position = SIMD3(v.position.x + ox, v.position.y, v.position.z + oz)
+                        return vd
+                    }
+                }
+                all.append(contentsOf: meshes)
+            }
+            return TerrainResult(meshes: all, texCount: textureByName.count, chunkCount: cells.count)
+        }.value
+
+        var allMeshes = result.meshes
+        let textured = allMeshes.filter { $0.texture != nil }.count
+        print("[TERRAIN] chunks=\(result.chunkCount) texturesAD=\(result.texCount) meshes=\(allMeshes.count) texturés=\(textured)")
+        guard !allMeshes.isEmpty else {
+            print("[TERRAIN] aucun mesh pour matrix[\(matrixEntry)]"); return
         }
 
-        let matched = materials.filter { textureByName[$0.texture0] != nil }.count
-        print("[TERRAIN] matériaux=\(materials.count), texturés=\(matched)")
-
-        func textureFor(meshIndex: Int, materialIndex: UInt16) -> CGImage? {
-            let table = meshIndex < bch0MeshCount ? materials : materials1
-            let mi = Int(materialIndex)
-            guard mi < table.count else { return nil }
-            return textureByName[table[mi].texture0]
-                ?? textureByName[table[mi].texture1]
-        }
-
-        // Normaliser les vertices en espace-tuile (même logique qu'avant)
+        // Normaliser les vertices en espace-tuile (centre + échelle sur la grille collision)
         var mnX: Float = .infinity, mxX: Float = -.infinity
         var mnZ: Float = .infinity, mxZ: Float = -.infinity
         for m in allMeshes { for v in m.vertices {
             mnX = min(mnX, v.position.x); mxX = max(mxX, v.position.x)
             mnZ = min(mnZ, v.position.z); mxZ = max(mxZ, v.position.z)
         }}
-        print("[TERRAIN] BBox X[\(mnX)…\(mxX)] Z[\(mnZ)…\(mxZ)]")
 
         let cX = (mnX + mxX) / 2
         let cZ = (mnZ + mxZ) / 2
@@ -891,13 +902,9 @@ struct ZoneEditorView: View {
         let tileHalfW = Float(collision.width) / 2
         let autoScale: Float = (halfExtX > 0 && collision.width > 0)
             ? tileHalfW / halfExtX : 1.0
-        print("[TERRAIN] autoScale=\(autoScale)")
 
-        bchMeshes = allMeshes.enumerated().map { (idx, mesh) in
+        allMeshes = allMeshes.map { mesh in
             var m = mesh
-            if m.texture == nil {
-                m.texture = textureFor(meshIndex: idx, materialIndex: m.materialIndex)
-            }
             m.vertices = mesh.vertices.map { v in
                 var vd = v
                 vd.position = SIMD3(
@@ -908,6 +915,7 @@ struct ZoneEditorView: View {
             }
             return m
         }
+        bchMeshes = allMeshes
     }
 
     private static func parseEntityMarkers(from zoData: Data, gridW: Int, gridH: Int) -> [ZoneEntityMarker] {
