@@ -13,6 +13,7 @@ struct BCHParser {
         var position: SIMD3<Float>
         var normal:   SIMD3<Float>
         var uv:       SIMD2<Float>
+        var color:    SIMD4<Float> = SIMD4(1, 1, 1, 1)   // vertex color (AO bakée)
     }
 
     struct MeshData {
@@ -507,9 +508,66 @@ struct BCHParser {
         return result
     }
 
-    // MARK: — Textures externes (BCH de a/0/3/2)
+    // MARK: — Matériaux (noms de textures par matériau)
+
+    struct MaterialInfo {
+        var name:     String   // nom du matériau (ex. "chip_kusa")
+        var texture0: String   // texture principale (ex. "c108_old_kusa")
+        var texture1: String   // texture secondaire de blend ("" si absente)
+    }
+
+    /// Extrait la table des matériaux d'un BCH géométrie (bc ≥ 0x21).
+    /// Entrées de 0x2C octets à materialsTableOffset (modelOff+52) :
+    ///   +0x1C = ptr nom texture0, +0x20 = ptr nom texture1, +0x28 = ptr nom matériau
+    /// (pointeurs absolus après relocation flag 1 → table de chaînes).
+    /// L'index = mesh.materialIndex.
+    static func parseMaterials(fileData: Data) -> [MaterialInfo] {
+        var b = [UInt8](fileData)
+        guard b.count > 0x44, b[0] == 0x42, b[1] == 0x43, b[2] == 0x48 else { return [] }
+
+        let bc         = b[4]
+        let mainHdrOff = ru32(b, 8)
+        let strTblOff  = ru32(b, 12)
+        let gpuCmdOff  = ru32(b, 16)
+        let dataOff    = ru32(b, 20)
+        var p = 24
+        var dataExtOff: UInt32 = 0
+        if bc > 0x20 { dataExtOff = ru32(b, p); p += 4 }
+        let relTblOff = ru32(b, p); p += 4
+        p += 16
+        if bc > 0x20 { p += 4 }
+        let relTblLen = ru32(b, p)
+
+        applyRelocation(&b, relTblOff: relTblOff, relTblLen: relTblLen, bc: bc,
+                        mainHdrOff: mainHdrOff, strTblOff: strTblOff,
+                        gpuCmdOff: gpuCmdOff, dataOff: dataOff, dataExtOff: dataExtOff)
+
+        let modPtrOff = Int(ru32(b, Int(mainHdrOff)))
+        let modCount  = Int(ru32(b, Int(mainHdrOff) + 4))
+        guard modCount > 0 else { return [] }
+        let modelOff  = Int(ru32(b, modPtrOff))
+        guard modelOff + 60 <= b.count else { return [] }
+
+        let matTblOff = Int(ru32(b, modelOff + 52))
+        let matCnt    = Int(ru32(b, modelOff + 56))
+        guard matTblOff > 0, matCnt > 0, matCnt < 512,
+              matTblOff + matCnt * 0x2C <= b.count else { return [] }
+
+        var result: [MaterialInfo] = []
+        for mi in 0..<matCnt {
+            let base = matTblOff + mi * 0x2C
+            result.append(MaterialInfo(
+                name:     readCString(b, at: Int(ru32(b, base + 0x28))),
+                texture0: readCString(b, at: Int(ru32(b, base + 0x1C))),
+                texture1: readCString(b, at: Int(ru32(b, base + 0x20)))))
+        }
+        return result
+    }
+
+    // MARK: — Textures externes (BCH des fichiers AD de a/0/1/4)
 
     struct TextureInfo {
+        var name:     String
         var image:    CGImage
         var width:    Int
         var height:   Int
@@ -545,9 +603,20 @@ struct BCHParser {
 
         let texPtrTableOff = Int(ru32(b, Int(mainHdrOff) + 36))
         let texCount       = Int(ru32(b, Int(mainHdrOff) + 40))
-        print("[TEXBCH] size=\(b.count) mainHdr=0x\(String(mainHdrOff,radix:16)) gpuCmd=0x\(String(gpuCmdOff,radix:16)) data=0x\(String(dataOff,radix:16)) texPtrTable=0x\(String(texPtrTableOff,radix:16)) texCount=\(texCount)")
-        guard texPtrTableOff > 0, texCount > 0,
+        guard texPtrTableOff > 0, texCount > 0, texCount < 512,
               texPtrTableOff + texCount * 4 <= b.count else { return [] }
+
+        // Dictionnaire des noms de textures (mainHdr+44) : nœud de 0xC octets
+        // (refBit u32, left u16, right u16, nameOff u32 absolu). Nœud 0 = racine ;
+        // entrées = nœuds 1..texCount, dans l'ordre de la table des pointeurs.
+        let texNameDictOff = Int(ru32(b, Int(mainHdrOff) + 44))
+        var texNames = [String](repeating: "", count: texCount)
+        if texNameDictOff > 0, texNameDictOff + (texCount + 1) * 0xC <= b.count {
+            for i in 0..<texCount {
+                let node = texNameDictOff + (i + 1) * 0xC
+                texNames[i] = readCString(b, at: Int(ru32(b, node + 8)))
+            }
+        }
 
         var result: [TextureInfo] = []
         var cursor = Int(dataOff)
@@ -574,9 +643,9 @@ struct BCHParser {
             let w = Int(size & 0xFFFF)
             let h = Int((size >> 16) & 0xFFFF)
             let fmtRaw = Int((cmds[0x08E] ?? 0) & 0xF)
-            print("[TEXBCH \(ti)] struct=0x\(String(sOff,radix:16)) w=\(w) h=\(h) fmt=\(fmtRaw) cursor=0x\(String(cursor,radix:16))")
+            // Taille indéterminable → on ne peut plus suivre le layout séquentiel : stop.
             guard w > 0, h > 0,
-                  let fmt = PICATextureDecoder.Format(rawValue: fmtRaw) else { continue }
+                  let fmt = PICATextureDecoder.Format(rawValue: fmtRaw) else { break }
 
             let nbytes = PICATextureDecoder.byteSize(format: fmt, width: w, height: h)
             guard cursor + nbytes <= b.count else { break }
@@ -590,7 +659,7 @@ struct BCHParser {
             }
 
             if let img = PICATextureDecoder.decode(data: chunk, width: w, height: h, format: fmt) {
-                result.append(TextureInfo(image: img, width: w, height: h,
+                result.append(TextureInfo(name: texNames[ti], image: img, width: w, height: h,
                                           isOpaque: opaque, byteSize: nbytes))
             }
         }
@@ -666,11 +735,15 @@ struct BCHParser {
         var posBuf  = [Float](); posBuf.reserveCapacity(vCount * 3)
         var normBuf = [Float](); normBuf.reserveCapacity(vCount * 3)
         var uvBuf   = [Float](); uvBuf.reserveCapacity(vCount * 2)
+        var colBuf  = [Float](); colBuf.reserveCapacity(vCount * 4)
+        var hasColor = false
 
         for v in mesh.vertices {
             posBuf  += [v.position.x * scale, v.position.y * scale, v.position.z * scale]
             normBuf += [v.normal.x, v.normal.y, v.normal.z]
             uvBuf   += [v.uv.x, 1.0 - v.uv.y]   // flip V pour SceneKit
+            colBuf  += [v.color.x, v.color.y, v.color.z, v.color.w]
+            if v.color != SIMD4<Float>(1, 1, 1, 1) { hasColor = true }
         }
 
         let posData  = Data(bytes: posBuf,  count: posBuf.count  * 4)
@@ -687,6 +760,15 @@ struct BCHParser {
             vectorCount: vCount, usesFloatComponents: true,
             componentsPerVector: 2, bytesPerComponent: 4, dataOffset: 0, dataStride: 8)
 
+        var sources = [posSrc, normSrc, uvSrc]
+        // SceneKit module la diffuse par la source .color → applique l'AO/teinte bakée.
+        if hasColor {
+            let colData = Data(bytes: colBuf, count: colBuf.count * 4)
+            sources.append(SCNGeometrySource(data: colData, semantic: .color,
+                vectorCount: vCount, usesFloatComponents: true,
+                componentsPerVector: 4, bytesPerComponent: 4, dataOffset: 0, dataStride: 16))
+        }
+
         var idx32 = mesh.indices
         let idxData = Data(bytes: &idx32, count: idx32.count * 4)
         let element = SCNGeometryElement(data: idxData,
@@ -694,7 +776,7 @@ struct BCHParser {
             primitiveCount: idx32.count / 3,
             bytesPerIndex: 4)
 
-        return SCNGeometry(sources: [posSrc, normSrc, uvSrc], elements: [element])
+        return SCNGeometry(sources: sources, elements: [element])
     }
 
     // MARK: — Table de relocation
@@ -935,9 +1017,13 @@ struct BCHParser {
                         cv[2] * posScale + posOffZ)
                 case 1:   // normal
                     vd.normal = SIMD3<Float>(cv[0], cv[1], cv[2])
+                case 3:   // vertex color (AO/teinte bakée) — u8 0-255 ou float 0-1
+                    let s: Float = aType == 3 ? 1.0 : (1.0 / 255.0)
+                    vd.color = SIMD4<Float>(cv[0] * s, cv[1] * s, cv[2] * s,
+                                            nComp >= 4 ? cv[3] * s : 1.0)
                 case 4:   // texCoord0
                     vd.uv = SIMD2<Float>(cv[0] * tex0Scale, cv[1] * tex0Scale)
-                default:  break   // tangent, color, bone data ignorés pour le terrain
+                default:  break   // tangent, bone data ignorés pour le terrain
                 }
             }
 
