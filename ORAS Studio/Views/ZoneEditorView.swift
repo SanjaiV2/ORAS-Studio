@@ -798,7 +798,7 @@ struct ZoneEditorView: View {
         print("[TERRAIN] GR[\(grEntry)] BCH[0] \(bch0Data.count) B")
 
         var allMeshes = await Task.detached(priority: .userInitiated) {
-            BCHParser.parseWithTextures(fileData: bch0Data, isTM: false)
+            BCHParser.parse(fileData: bch0Data, isTM: false)
         }.value
         print("[TERRAIN] BCH[0] → \(allMeshes.count) meshes \(allMeshes.reduce(0){$0+$1.vertices.count}) vtx")
 
@@ -817,7 +817,7 @@ struct ZoneEditorView: View {
             let bch1Data = rawGR.subdata(in: off..<bch1End)
             print("[TERRAIN] GR BCH[1] @0x\(String(off, radix:16)) \(bch1Data.count) B")
             let meshes1 = await Task.detached(priority: .userInitiated) {
-                BCHParser.parseWithTextures(fileData: bch1Data, isTM: false)
+                BCHParser.parse(fileData: bch1Data, isTM: false)
             }.value
             print("[TERRAIN] BCH[1] → \(meshes1.count) meshes \(meshes1.reduce(0){$0+$1.vertices.count}) vtx")
             allMeshes.append(contentsOf: meshes1)
@@ -827,6 +827,22 @@ struct ZoneEditorView: View {
         guard !allMeshes.isEmpty else {
             print("[TERRAIN] aucun mesh extrait de GR[\(grEntry)]"); return
         }
+
+        // Charger les textures depuis le BCH séparé a/0/3/2[grEntry].
+        // Le BCH géométrie (a/0/3/9) ne contient aucune texture embarquée : les
+        // textures « bakées » du terrain vivent dans a/0/3/2 au même index GR.
+        let garc032URL = project.romfsURL.appending(path: "a/0/3/2")
+        let textures: [BCHParser.TextureInfo] = await Task.detached(priority: .userInitiated) {
+            guard FileManager.default.fileExists(atPath: garc032URL.path(percentEncoded: false)),
+                  let raw = GARCFile.readEntry(grEntry, from: garc032URL) else { return [] }
+            return BCHParser.parseTextureBCH(fileData: LZ11Decompressor.decompressIfNeeded(raw))
+        }.value
+
+        // Texture primaire = plus grande texture opaque (surface principale du terrain).
+        let primaryTex = textures.filter { $0.isOpaque }
+                                 .max(by: { $0.byteSize < $1.byteSize })?.image
+            ?? textures.max(by: { $0.byteSize < $1.byteSize })?.image
+        print("[TERRAIN] textures a/0/3/2[\(grEntry)] → \(textures.count), primaire=\(primaryTex != nil)")
 
         // Normaliser les vertices en espace-tuile (même logique qu'avant)
         var mnX: Float = .infinity, mxX: Float = -.infinity
@@ -847,6 +863,8 @@ struct ZoneEditorView: View {
 
         bchMeshes = allMeshes.map { mesh in
             var m = mesh
+            // Appliquer la texture primaire aux meshes sans texture embarquée.
+            if m.texture == nil { m.texture = primaryTex }
             m.vertices = mesh.vertices.map { v in
                 var vd = v
                 vd.position = SIMD3(

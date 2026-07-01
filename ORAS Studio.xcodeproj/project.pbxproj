@@ -43,6 +43,7 @@
 		AA000100000000000000073 /* BCHParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000100000000000000072 /* BCHParser.swift */; };
 		AA000100000000000000075 /* ADParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000100000000000000074 /* ADParser.swift */; };
 		AA000100000000000000077 /* ETC1Decoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000100000000000000076 /* ETC1Decoder.swift */; };
+		AA000100000000000000079 /* PICATextureDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000100000000000000078 /* PICATextureDecoder.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -85,6 +86,7 @@
 		AA000100000000000000072 /* BCHParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BCHParser.swift; sourceTree = "<group>"; };
 		AA000100000000000000074 /* ADParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ADParser.swift; sourceTree = "<group>"; };
 		AA000100000000000000076 /* ETC1Decoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ETC1Decoder.swift; sourceTree = "<group>"; };
+		AA000100000000000000078 /* PICATextureDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PICATextureDecoder.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -163,6 +165,7 @@
 				AA000100000000000000072 /* BCHParser.swift */,
 				AA000100000000000000074 /* ADParser.swift */,
 				AA000100000000000000076 /* ETC1Decoder.swift */,
+				AA000100000000000000078 /* PICATextureDecoder.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -287,6 +290,7 @@
 				AA000100000000000000073 /* BCHParser.swift in Sources */,
 				AA000100000000000000075 /* ADParser.swift in Sources */,
 				AA000100000000000000077 /* ETC1Decoder.swift in Sources */,
+				AA000100000000000000079 /* PICATextureDecoder.swift in Sources */,
 				AA000100000000000000071 /* ProceduralTextureKit.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

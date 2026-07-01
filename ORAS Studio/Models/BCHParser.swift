@@ -507,6 +507,123 @@ struct BCHParser {
         return result
     }
 
+    // MARK: — Textures externes (BCH de a/0/3/2)
+
+    struct TextureInfo {
+        var image:    CGImage
+        var width:    Int
+        var height:   Int
+        var isOpaque: Bool
+        var byteSize: Int
+    }
+
+    /// Décode toutes les textures d'un BCH « texture » séparé (ex. a/0/3/2[grIdx]).
+    /// Les dimensions/format de chaque texture sont lus depuis son buffer de commandes
+    /// GPU (registres 0x082 taille, 0x08E format) ; les données pixel sont rangées
+    /// séquentiellement à partir de la section data.
+    static func parseTextureBCH(fileData: Data) -> [TextureInfo] {
+        var b = [UInt8](fileData)
+        guard b.count > 0x44, b[0] == 0x42, b[1] == 0x43, b[2] == 0x48 else { return [] }
+
+        let bc         = b[4]
+        let mainHdrOff = ru32(b, 8)
+        let strTblOff  = ru32(b, 12)
+        let gpuCmdOff  = ru32(b, 16)
+        let dataOff    = ru32(b, 20)
+
+        var p = 24
+        var dataExtOff: UInt32 = 0
+        if bc > 0x20 { dataExtOff = ru32(b, p); p += 4 }
+        let relTblOff = ru32(b, p); p += 4
+        p += 16
+        if bc > 0x20 { p += 4 }
+        let relTblLen = ru32(b, p)
+
+        applyRelocation(&b, relTblOff: relTblOff, relTblLen: relTblLen, bc: bc,
+                        mainHdrOff: mainHdrOff, strTblOff: strTblOff,
+                        gpuCmdOff: gpuCmdOff, dataOff: dataOff, dataExtOff: dataExtOff)
+
+        let texPtrTableOff = Int(ru32(b, Int(mainHdrOff) + 36))
+        let texCount       = Int(ru32(b, Int(mainHdrOff) + 40))
+        print("[TEXBCH] size=\(b.count) mainHdr=0x\(String(mainHdrOff,radix:16)) gpuCmd=0x\(String(gpuCmdOff,radix:16)) data=0x\(String(dataOff,radix:16)) texPtrTable=0x\(String(texPtrTableOff,radix:16)) texCount=\(texCount)")
+        guard texPtrTableOff > 0, texCount > 0,
+              texPtrTableOff + texCount * 4 <= b.count else { return [] }
+
+        var result: [TextureInfo] = []
+        var cursor = Int(dataOff)
+
+        for ti in 0..<texCount {
+            let sOff = Int(ru32(b, texPtrTableOff + ti * 4))
+            guard sOff > 0, sOff + 8 <= b.count else { break }
+
+            // Le struct texture = suite de paires (offsetCommandes, nbMots) relatives à
+            // gpuCmdOff. On lit les paramètres bruts des registres (0x082 taille, 0x08E format)
+            // sans passer par le masquage PICA — les buffers texture font des écritures pleines.
+            // Les offsets de buffer sont déjà absolus après la relocation (flag 2 → +gpuCmdOff).
+            var cmds = [UInt32: UInt32]()
+            var pi = 0
+            while pi < 6, sOff + pi * 8 + 8 <= b.count {
+                let cbAbs = Int(ru32(b, sOff + pi * 8))
+                let wc    = Int(ru32(b, sOff + pi * 8 + 4))
+                if wc == 0 || wc > 0x100 { break }
+                readRawPICARegisters(b, at: cbAbs, wordCount: wc, into: &cmds)
+                pi += 1
+            }
+
+            let size = cmds[0x082] ?? 0
+            let w = Int(size & 0xFFFF)
+            let h = Int((size >> 16) & 0xFFFF)
+            let fmtRaw = Int((cmds[0x08E] ?? 0) & 0xF)
+            print("[TEXBCH \(ti)] struct=0x\(String(sOff,radix:16)) w=\(w) h=\(h) fmt=\(fmtRaw) cursor=0x\(String(cursor,radix:16))")
+            guard w > 0, h > 0,
+                  let fmt = PICATextureDecoder.Format(rawValue: fmtRaw) else { continue }
+
+            let nbytes = PICATextureDecoder.byteSize(format: fmt, width: w, height: h)
+            guard cursor + nbytes <= b.count else { break }
+            let chunk = Data(b[cursor..<cursor + nbytes])
+            cursor += nbytes
+
+            let opaque: Bool
+            switch fmt {
+            case .etc1, .rgb565, .rgb8, .l8, .hilo8: opaque = true
+            default: opaque = false
+            }
+
+            if let img = PICATextureDecoder.decode(data: chunk, width: w, height: h, format: fmt) {
+                result.append(TextureInfo(image: img, width: w, height: h,
+                                          isOpaque: opaque, byteSize: nbytes))
+            }
+        }
+        return result
+    }
+
+    /// Lit les derniers paramètres bruts écrits sur chaque registre PICA d'un buffer
+    /// de commandes (param, header). Gère l'écriture en rafale (extra + consecutive).
+    private static func readRawPICARegisters(_ b: [UInt8], at startOff: Int,
+                                             wordCount: Int, into regs: inout [UInt32: UInt32]) {
+        var pos = startOff
+        let end = startOff + wordCount * 4
+        while pos + 8 <= end && pos + 8 <= b.count {
+            let parameter = ru32(b, pos)
+            let header    = ru32(b, pos + 4)
+            pos += 8
+            let id     = header & 0xFFFF
+            let extra  = Int((header >> 20) & 0x7FF)
+            let consec = (header >> 31) != 0
+            regs[id] = parameter
+
+            var curId = id
+            for _ in 0..<extra {
+                guard pos + 4 <= b.count else { break }
+                if consec { curId &+= 1 }
+                regs[curId] = ru32(b, pos)
+                pos += 4
+            }
+            // Alignement 8 octets entre paires de commandes
+            if ((pos - startOff) & 7) != 0 { pos = (pos + 7) & ~7 }
+        }
+    }
+
     // MARK: — Conversion SceneKit
 
     static func toSCNNode(meshes: [MeshData], scale: Float = 1.0) -> SCNNode {
