@@ -386,6 +386,18 @@ struct ZoneEditorView: View {
     @State private var show3D: Bool = false
     @State private var bchMeshes: [BCHParser.MeshData] = []
 
+    // Collision réelle : un enregistrement par chunk GR de la matrix de la zone.
+    struct CollisionChunk {
+        var grIndex: Int
+        var cellX: Int, cellY: Int        // position dans la grille affichée (0-based)
+        var tilemap: GRTileMap            // valeurs u32 d'origine
+        var section0: Data                // section GR[0] d'origine (préserve la fin)
+        var originalTypes: [TileType]     // classification d'origine (détection de peinture)
+    }
+    @State private var collisionChunks: [CollisionChunk] = []
+    @State private var chunkTileW = 40   // dimensions d'un chunk en tuiles
+    @State private var chunkTileH = 40
+
     private var collisionEditorView: some View {
         VStack(spacing: 0) {
             collisionToolbar
@@ -672,17 +684,104 @@ struct ZoneEditorView: View {
     }
 
     private func saveCollision() {
-        guard let project = controller.project else {
-            exportCollision(); return
+        guard let project = controller.project else { exportCollision(); return }
+        guard !collisionChunks.isEmpty else {
+            showError("Collision réelle non chargée pour cette zone — rien à écrire dans le jeu.")
+            return
         }
-        let collDir = project.romfsURL.appending(path: "collision", directoryHint: .isDirectory)
-        do {
-            try FileManager.default.createDirectory(at: collDir, withIntermediateDirectories: true)
-            let dest = collDir.appending(path: "map.coll")
-            try collision.encode().write(to: dest)
+        Task { await saveCollisionToGame(project: project) }
+    }
+
+    // Réinjecte les tuiles peintes dans les GR modifiés → GARC a/0/3/9 → mods Citra.
+    // Seules les tuiles dont le TYPE affiché a changé reçoivent une valeur canonique ;
+    // toutes les autres conservent leur valeur u32 d'origine (préservation maximale).
+    private func saveCollisionToGame(project: ORASProject) async {
+        let garc039URL = project.romfsURL.appending(path: "a/0/3/9")
+        let map = collision
+        let chunks = collisionChunks
+        let tW = chunkTileW, tH = chunkTileH
+
+        struct SaveOutcome { var updated: [Int: Data]; var newChunks: [CollisionChunk] }
+        let outcome: Result<SaveOutcome, Error> = await Task.detached(priority: .userInitiated) {
+            do {
+                var updated: [Int: Data] = [:]
+                var newChunks = chunks
+                for (ci, chunk) in chunks.enumerated() {
+                    var tm = chunk.tilemap
+                    var changed = false
+                    for y in 0..<tm.height {
+                        for x in 0..<tm.width {
+                            let gx = chunk.cellX * tW + x
+                            let gy = chunk.cellY * tH + y
+                            guard map.inBounds(x: gx, y: gy) else { continue }
+                            let painted = map[gx, gy]
+                            let i = y * tm.width + x
+                            if painted != chunk.originalTypes[i] {
+                                tm.tiles[i] = ORASTileValue.rawValue(for: painted)
+                                changed = true
+                            }
+                        }
+                    }
+                    guard changed else { continue }
+
+                    // relire le GR complet, remplacer la section 0, repacker, compresser
+                    guard let rawGRc = GARCFile.readEntry(chunk.grIndex, from: garc039URL) else {
+                        throw ORASError.missingGARC("a/0/3/9[\(chunk.grIndex)]")
+                    }
+                    let rawGR = LZ11Decompressor.decompressIfNeeded(rawGRc)
+                    guard var gr = GRContainer.parse(rawGR) else {
+                        throw ORASError.missingGARC("GR[\(chunk.grIndex)] illisible")
+                    }
+                    gr.sections[0] = tm.encode(original: chunk.section0)
+                    let repacked   = gr.repack()
+                    updated[chunk.grIndex] = LZ11Decompressor.compress(repacked)
+
+                    newChunks[ci].tilemap = tm
+                    newChunks[ci].originalTypes = tm.tiles.map { ORASTileValue.tileType(for: $0) }
+                }
+                guard !updated.isEmpty else {
+                    return .success(SaveOutcome(updated: [:], newChunks: chunks))
+                }
+
+                // réécriture chirurgicale du GARC (108 MB — une seule passe)
+                let garcData = try Data(contentsOf: garc039URL)
+                let rebuilt  = try GARCSurgeon.replacingEntries(in: garcData, replacements: updated)
+                try rebuilt.write(to: garc039URL, options: .atomic)
+                return .success(SaveOutcome(updated: updated, newChunks: newChunks))
+            } catch {
+                return .failure(error)
+            }
+        }.value
+
+        switch outcome {
+        case .failure(let error):
+            showError("Échec de la sauvegarde : \(error.localizedDescription)")
+        case .success(let result):
+            guard !result.updated.isEmpty else {
+                collDirty = false
+                showSave("Aucune tuile modifiée — rien à écrire.")
+                return
+            }
+            collisionChunks = result.newChunks
             collDirty = false
-            showSave("Collision sauvegardée (\(collision.width)×\(collision.height) tuiles)")
-        } catch { showError(error.localizedDescription) }
+
+            // Copie vers Citra (LayeredFS) pour effet immédiat en jeu
+            let modsURL = FileManager.default.homeDirectoryForCurrentUser
+                .appending(path: "Library/Application Support/Citra/load/mods/000400000011C400/romfs/a/0/3")
+            var modsMsg = ""
+            do {
+                try FileManager.default.createDirectory(at: modsURL, withIntermediateDirectories: true)
+                let dest = modsURL.appending(path: "9")
+                if FileManager.default.fileExists(atPath: dest.path(percentEncoded: false)) {
+                    try FileManager.default.removeItem(at: dest)
+                }
+                try FileManager.default.copyItem(at: garc039URL, to: dest)
+                modsMsg = " + copié vers Citra mods"
+            } catch {
+                modsMsg = " (copie Citra à faire manuellement : a/0/3/9)"
+            }
+            showSave("Collision écrite dans le jeu (\(result.updated.count) chunk(s))\(modsMsg)")
+        }
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -768,7 +867,101 @@ struct ZoneEditorView: View {
         entityMarkers = result.markers
         collision     = .defaultMap(width: result.gridW, height: result.gridH)
         collDirty     = false
+        collisionChunks = []
+        Task { await loadCollision(matrixEntry: result.mapMatrix) }
         Task { await loadTerrainMeshes(zoneID: id, matrixEntry: result.mapMatrix, areaEntry: result.mapArea) }
+    }
+
+    // Charge la VRAIE collision (tilemap GR[0] de chaque chunk de la matrix)
+    // dans la grille de l'éditeur, à la place de la grille vide par défaut.
+    private func loadCollision(matrixEntry: Int) async {
+        guard let project = controller.project else { return }
+        let garc040URL = project.romfsURL.appending(path: "a/0/4/0")
+        let garc039URL = project.romfsURL.appending(path: "a/0/3/9")
+        guard FileManager.default.fileExists(atPath: garc040URL.path(percentEncoded: false)),
+              FileManager.default.fileExists(atPath: garc039URL.path(percentEncoded: false)) else { return }
+
+        struct LoadResult {
+            var chunks: [CollisionChunk]
+            var gridW: Int, gridH: Int
+            var tileW: Int, tileH: Int
+            var types: [[TileType]]
+        }
+        let loaded: LoadResult? = await Task.detached(priority: .userInitiated) { () -> LoadResult? in
+            func ru16(_ d: Data, _ o: Int) -> Int {
+                o + 2 <= d.count
+                    ? Int(d.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: o, as: UInt16.self) }) : 0
+            }
+            func ru32(_ d: Data, _ o: Int) -> Int {
+                o + 4 <= d.count
+                    ? Int(d.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: o, as: UInt32.self) }) : 0
+            }
+            // matrix → cellules
+            guard let rawMM = GARCFile.readEntry(matrixEntry, from: garc040URL) else { return nil }
+            let mm = LZ11Decompressor.decompressIfNeeded(rawMM)
+            guard mm.count > 8, mm[0] == 0x4D, mm[1] == 0x4D else { return nil }   // "MM"
+            let sec0 = ru32(mm, 4)
+            guard sec0 > 0, sec0 + 8 <= mm.count else { return nil }
+            let d = mm.subdata(in: sec0..<mm.count)
+            let W = ru16(d, 4), H = ru16(d, 6)
+            guard W > 0, H > 0, W * H < 1024 else { return nil }
+            var cells: [(gr: Int, gx: Int, gy: Int)] = []
+            for i in 0..<(W * H) {
+                let v = ru16(d, 8 + i * 2)
+                if v != 0xFFFF { cells.append((v, i % W, i / W)) }
+            }
+            guard !cells.isEmpty else { return nil }
+            let minGx = cells.map(\.gx).min()!, maxGx = cells.map(\.gx).max()!
+            let minGy = cells.map(\.gy).min()!, maxGy = cells.map(\.gy).max()!
+
+            var chunks: [CollisionChunk] = []
+            var tileW = 40, tileH = 40
+            for cell in cells {
+                guard let rawGRc = GARCFile.readEntry(cell.gr, from: garc039URL) else { continue }
+                let rawGR = LZ11Decompressor.decompressIfNeeded(rawGRc)
+                guard let gr = GRContainer.parse(rawGR),
+                      let tm = GRTileMap(section0: gr.sections[0]) else { continue }
+                tileW = tm.width; tileH = tm.height
+                chunks.append(CollisionChunk(
+                    grIndex: cell.gr,
+                    cellX: cell.gx - minGx, cellY: cell.gy - minGy,
+                    tilemap: tm,
+                    section0: gr.sections[0],
+                    originalTypes: tm.tiles.map { ORASTileValue.tileType(for: $0) }))
+            }
+            guard !chunks.isEmpty else { return nil }
+
+            let gridW = (maxGx - minGx + 1) * tileW
+            let gridH = (maxGy - minGy + 1) * tileH
+            guard gridW <= 1024, gridH <= 1024 else { return nil }
+            // grille assemblée (cellules absentes = bloqué)
+            var types = Array(repeating: Array(repeating: TileType.blocked, count: gridW), count: gridH)
+            for c in chunks {
+                for y in 0..<c.tilemap.height {
+                    for x in 0..<c.tilemap.width {
+                        types[c.cellY * tileH + y][c.cellX * tileW + x] =
+                            ORASTileValue.tileType(for: c.tilemap.tiles[y * c.tilemap.width + x])
+                    }
+                }
+            }
+            return LoadResult(chunks: chunks, gridW: gridW, gridH: gridH,
+                              tileW: tileW, tileH: tileH, types: types)
+        }.value
+
+        guard let loaded else {
+            print("[COLL] chargement réel impossible pour matrix[\(matrixEntry)] — grille par défaut")
+            return
+        }
+        var map = CollisionMap(width: loaded.gridW, height: loaded.gridH)
+        for y in 0..<loaded.gridH {
+            for x in 0..<loaded.gridW { map[x, y] = loaded.types[y][x] }
+        }
+        collision       = map
+        collisionChunks = loaded.chunks
+        chunkTileW      = loaded.tileW
+        chunkTileH      = loaded.tileH
+        collDirty       = false
+        print("[COLL] collision réelle chargée : \(loaded.gridW)×\(loaded.gridH) tuiles, \(loaded.chunks.count) chunks")
     }
 
     // Pipeline officiel (structure pk3DS/ZoneData) :
