@@ -45,6 +45,8 @@
 		AA000100000000000000077 /* ETC1Decoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000100000000000000076 /* ETC1Decoder.swift */; };
 		AA000100000000000000079 /* PICATextureDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000100000000000000078 /* PICATextureDecoder.swift */; };
 		AA00010000000000000007D /* GRTileMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00010000000000000007C /* GRTileMap.swift */; };
+		AA00010000000000000007F /* CinematicModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA00010000000000000007E /* CinematicModel.swift */; };
+		AA000100000000000000081 /* CinematicEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000100000000000000080 /* CinematicEditorView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -89,6 +91,8 @@
 		AA000100000000000000076 /* ETC1Decoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ETC1Decoder.swift; sourceTree = "<group>"; };
 		AA000100000000000000078 /* PICATextureDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PICATextureDecoder.swift; sourceTree = "<group>"; };
 		AA00010000000000000007C /* GRTileMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GRTileMap.swift; sourceTree = "<group>"; };
+		AA00010000000000000007E /* CinematicModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CinematicModel.swift; sourceTree = "<group>"; };
+		AA000100000000000000080 /* CinematicEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CinematicEditorView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -139,6 +143,7 @@
 				AA000100000000000000046 /* ItemEditorView.swift */,
 				AA000100000000000000066 /* EntityEditorView.swift */,
 				AA000100000000000000068 /* ScriptBuilderView.swift */,
+				AA000100000000000000080 /* CinematicEditorView.swift */,
 				AA00010000000000000006A /* FlagEditorView.swift */,
 				AA00010000000000000006E /* ZoneSceneKitView.swift */,
 			);
@@ -169,6 +174,7 @@
 				AA000100000000000000076 /* ETC1Decoder.swift */,
 				AA000100000000000000078 /* PICATextureDecoder.swift */,
 				AA00010000000000000007C /* GRTileMap.swift */,
+				AA00010000000000000007E /* CinematicModel.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -295,6 +301,8 @@
 				AA000100000000000000077 /* ETC1Decoder.swift in Sources */,
 				AA000100000000000000079 /* PICATextureDecoder.swift in Sources */,
 				AA00010000000000000007D /* GRTileMap.swift in Sources */,
+				AA00010000000000000007F /* CinematicModel.swift in Sources */,
+				AA000100000000000000081 /* CinematicEditorView.swift in Sources */,
 				AA000100000000000000071 /* ProceduralTextureKit.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

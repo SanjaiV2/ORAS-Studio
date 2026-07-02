@@ -38,6 +38,7 @@ struct DetailView: View {
         case .explorer:      GARCExplorerView()
         case .entityEditor:  EntityEditorView()
         case .scriptBuilder: ScriptBuilderView()
+        case .cinematics:    CinematicEditorView()
         case .flagEditor:    FlagEditorView()
         }
     }

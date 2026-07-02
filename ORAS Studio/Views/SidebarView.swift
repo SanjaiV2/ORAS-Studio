@@ -14,6 +14,7 @@ enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
     // Groupe "Création" (Milestone 3)
     case entityEditor  = "Entités"
     case scriptBuilder = "Scripts+"
+    case cinematics    = "Cinématiques"
     case flagEditor    = "Flags"
 
     var id: String { rawValue }
@@ -29,6 +30,7 @@ enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .explorer:      "archivebox.fill"
         case .entityEditor:  "figure.walk"
         case .scriptBuilder: "terminal.fill"
+        case .cinematics:    "film.stack.fill"
         case .flagEditor:    "flag.fill"
         }
     }
@@ -44,6 +46,7 @@ enum SidebarSection: String, Hashable, CaseIterable, Identifiable {
         case .explorer:      .mint
         case .entityEditor:  .teal
         case .scriptBuilder: .indigo
+        case .cinematics:    .pink
         case .flagEditor:    .pink
         }
     }
