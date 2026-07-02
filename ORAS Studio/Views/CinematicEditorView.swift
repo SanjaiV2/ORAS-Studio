@@ -71,9 +71,14 @@ struct CinematicEditorView: View {
                     Section("Parler à un PNJ  ·  fiable") {
                         if npcs.isEmpty { Text("Aucun PNJ dans cette zone").foregroundStyle(.tertiary) }
                         ForEach(Array(npcs.enumerated()), id: \.offset) { (i, npc) in
+                            // banque storytext valide = dialogue simple éditable ;
+                            // au-delà = PNJ à script complexe (non éditable en v1)
+                            let simple = npc.scriptIndex < 637
                             triggerRow(.npcDialogue(npcIndex: i),
-                                       title: "PNJ #\(i)",
-                                       subtitle: "banque texte \(npc.scriptIndex) · flag \(npc.spawnFlag)")
+                                       title: simple ? "PNJ #\(i)  💬" : "PNJ #\(i)  ⚙️",
+                                       subtitle: simple
+                                           ? "dialogue simple · banque \(npc.scriptIndex) · pos (\(npc.xPos / 18),\(npc.yPos / 18))"
+                                           : "script complexe (\(npc.scriptIndex)) — non éditable")
                         }
                     }
                     Section("Marcher sur un déclencheur  ·  ⚠︎ expérimental") {
@@ -237,7 +242,7 @@ struct CinematicEditorView: View {
               let raw = garc.rawData(entry: id) else { return }
         let zo = LZ11Decompressor.decompressIfNeeded(raw)
         zoData = zo
-        npcs = ZoneEntities.parse(from: zo)?.npcs ?? []
+        npcs = ZoneEntities.extractSection1(from: zo).flatMap { ZoneEntities.parse(from: $0) }?.npcs ?? []
         if let secs = ZOContainer.sections(zo), secs.count >= 3 {
             scriptSection = FireFlySection.parse(secs[2])
         } else {
@@ -268,6 +273,13 @@ struct CinematicEditorView: View {
             for edit in result.storytextEdits {
                 for garcPath in ["a/0/8/2", "a/0/8/1"] {     // FR, EN
                     var garc = try await project.garc(at: garcPath)
+                    guard edit.bank < garc.entries.count else {
+                        throw NSError(domain: "Cinematic", code: 1, userInfo: [
+                            NSLocalizedDescriptionKey:
+                            "Ce PNJ référence la banque \(edit.bank), hors limites (\(garc.entries.count) banques). " +
+                            "Son dialogue n'est pas une simple banque de texte — choisissez un autre PNJ (banque < \(garc.entries.count))."
+                        ])
+                    }
                     guard let bankData = garc.decompressedData(entry: edit.bank) else { continue }
                     var lines = try PPTXTDecoder.decode(bankData).map(\.text)
                     while lines.count <= edit.line { lines.append("") }
